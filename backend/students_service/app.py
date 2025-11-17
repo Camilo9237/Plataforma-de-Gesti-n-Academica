@@ -229,5 +229,40 @@ def not_found(error):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
+
+@app.route('/student/grades')
+def student_grades():
+    # Mock: calificaciones recientes y promedio
+    grades = [
+        {'subject': 'Matemáticas', 'date': '2024-11-15', 'grade': 4.2},
+        {'subject': 'Español', 'date': '2024-11-14', 'grade': 4.8},
+        {'subject': 'Ciencias', 'date': '2024-11-13', 'grade': 3.9},
+        {'subject': 'Inglés', 'date': '2024-11-12', 'grade': 4.5}
+    ]
+    average = round(sum(g['grade'] for g in grades) / len(grades), 2)
+    return jsonify({'recent': grades, 'average': average}), 200
+
+
+@app.route('/student/notifications')
+def student_notifications():
+    notes = [
+        {'id': 'n1', 'title': 'Boletín del 3er periodo disponible', 'type': 'info'},
+        {'id': 'n2', 'title': 'Entrega de proyecto de Ciencias mañana', 'type': 'warning'},
+        {'id': 'n3', 'title': 'Reunión de padres el viernes 22', 'type': 'info'}
+    ]
+    return jsonify({'notifications': notes}), 200
+
+
+@app.route('/student/schedule-today')
+def student_schedule_today():
+    schedule = [
+        {'time': '7:00 - 7:45', 'subject': 'Matemáticas', 'location': 'A101', 'teacher': 'Prof. García'},
+        {'time': '7:45 - 8:30', 'subject': 'Español', 'location': 'A102', 'teacher': 'Prof. López'},
+        {'time': '8:30 - 9:15', 'subject': 'Ciencias', 'location': 'Lab 1', 'teacher': 'Prof. Martín'},
+        {'time': '10:00 - 10:45', 'subject': 'Inglés', 'location': 'A103', 'teacher': 'Prof. Smith'},
+        {'time': '10:45 - 11:30', 'subject': 'Ed. Física', 'location': 'Polideportivo', 'teacher': 'Prof. Ruiz'}
+    ]
+    return jsonify({'date': datetime.utcnow().strftime('%A, %d de %B de %Y'), 'events': schedule}), 200
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

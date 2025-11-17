@@ -12,6 +12,21 @@ export const routes: Routes = [
 		canActivate: [RoleGuard]
 	},
 	{
+		path: 'dashboard/student',
+		loadComponent: () => import('./dashboard/student/student').then(m => m.StudentDashboard),
+		canActivate: [RoleGuard]
+	},
+	{
+		path: 'dashboard/teacher',
+		loadComponent: () => import('./dashboard/teacher/teacher').then(m => m.TeacherDashboard),
+		canActivate: [RoleGuard]
+	},
+	{
+		path: 'dashboard/admin',
+		loadComponent: () => import('./dashboard/admin/admin').then(m => m.AdminDashboard),
+		canActivate: [RoleGuard]
+	},
+	{
 		path: '',
 		redirectTo: 'login',
 		pathMatch: 'full'

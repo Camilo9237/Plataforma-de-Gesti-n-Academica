@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-login',
@@ -11,7 +12,7 @@ import { Router } from '@angular/router';
   styleUrls: ['./login.css']
 })
 export class Login {
-  constructor(private router: Router) {}
+  constructor(private router: Router, private api: ApiService) {}
 
   username: string = '';
   password: string = '';
@@ -32,17 +33,9 @@ export class Login {
 
     this.loading = true;
     try {
-      const resp = await fetch('http://localhost:5000/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ username: this.username, password: this.password })
-      });
-
-      const data = await resp.json();
-      if (!resp.ok) {
-        this.error = data.error || data.message || 'Error en autenticación';
+      const data = await this.api.login({ username: this.username, password: this.password }).toPromise();
+      if (!data) {
+        this.error = 'Error en autenticación';
       } else {
         // almacenar token en localStorage
         if (data.access_token) {
@@ -71,8 +64,10 @@ export class Login {
           return;
         }
 
-        // role válido → navegar al dashboard interno
-        this.router.navigate(['/dashboard']);
+        // role válido → navegar al dashboard por rol
+        const routeMap: any = { estudiante: '/dashboard/student', docente: '/dashboard/teacher', administrador: '/dashboard/admin' };
+        const target = routeMap[role] || '/dashboard';
+        this.router.navigate([target]);
       }
     } catch (err: any) {
       this.error = err?.message || 'Error de conexión';

@@ -104,6 +104,53 @@ def dashboard():
     return jsonify({'message': 'Administrator dashboard', 'time': datetime.utcnow().isoformat() + 'Z'})
 
 
+@app.route('/admin/stats')
+@token_required('administrador')
+def admin_stats():
+    # Datos mock para el panel administrativo
+    data = {
+        'total_students': 1247,
+        'enrollment_complete_pct': 92.3,
+        'active_campuses': 3,
+        'active_teachers': 78
+    }
+    return jsonify(data)
+
+
+@app.route('/admin/pending-tasks')
+@token_required('administrador')
+def admin_pending_tasks():
+    tasks = [
+        {'id': 't1', 'title': 'Revisión de matrículas pendientes', 'count': 15, 'severity': 'urgent'},
+        {'id': 't2', 'title': 'Aprobación de certificados', 'count': 8, 'severity': 'normal'},
+        {'id': 't3', 'title': 'Validación de documentos', 'count': 23, 'severity': 'normal'},
+        {'id': 't4', 'title': 'Asignación de docentes', 'count': 5, 'severity': 'urgent'}
+    ]
+    return jsonify({'tasks': tasks})
+
+
+@app.route('/admin/campuses')
+@token_required('administrador')
+def admin_campuses():
+    campuses = [
+        {'name': 'Sede Principal', 'students': 567, 'occupancy_pct': 89, 'status': 'Activa'},
+        {'name': 'Sede Norte', 'students': 423, 'occupancy_pct': 76, 'status': 'Activa'},
+        {'name': 'Sede Sur', 'students': 257, 'occupancy_pct': 45, 'status': 'Activa'}
+    ]
+    return jsonify({'campuses': campuses})
+
+
+@app.route('/admin/recent-stats')
+@token_required('administrador')
+def admin_recent_stats():
+    recent = [
+        {'month': 'Nov 2024', 'enrollments': 45, 'dropouts': 3, 'avg': 4.1},
+        {'month': 'Oct 2024', 'enrollments': 32, 'dropouts': 7, 'avg': 4.0},
+        {'month': 'Sep 2024', 'enrollments': 52, 'dropouts': 5, 'avg': 4.2}
+    ]
+    return jsonify({'recent': recent})
+
+
 def _extract_roles_from_userinfo(userinfo):
     roles = set()
     # caso mock (g.userinfo puede contener 'roles')

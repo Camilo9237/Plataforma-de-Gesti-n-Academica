@@ -273,5 +273,36 @@ def not_found(error):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
+
+@app.route('/teacher/groups')
+def teacher_groups():
+    # Mock: grupos asignados y progreso
+    groups = [
+        {'id': 'g1', 'name': "10°A - Matemáticas", 'students': 28, 'progress_pct': 75},
+        {'id': 'g2', 'name': "11°B - Física", 'students': 25, 'progress_pct': 60},
+        {'id': 'g3', 'name': "9°C - Matemáticas", 'students': 30, 'progress_pct': 80}
+    ]
+    return jsonify({'groups': groups}), 200
+
+
+@app.route('/teacher/pending-grades')
+def teacher_pending_grades():
+    pending = [
+        {'course': "Matemáticas 10°A", 'pending': 12},
+        {'course': "Física 11°B", 'pending': 8},
+        {'course': "Matemáticas 9°C", 'pending': 5}
+    ]
+    return jsonify({'pending': pending}), 200
+
+
+@app.route('/teacher/overview')
+def teacher_overview():
+    overview = {
+        'groups_count': 3,
+        'pending_grades': 25,
+        'next_event': 'Entrega de notas el viernes'
+    }
+    return jsonify({'overview': overview}), 200
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)
