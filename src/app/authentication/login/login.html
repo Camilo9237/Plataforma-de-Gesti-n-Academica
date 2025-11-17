@@ -1,1 +1,19 @@
-<p>login works!</p>
+<div class="login-container">
+	<h2>Iniciar sesión</h2>
+	<form (submit)="login($event)" class="login-form">
+		<label>
+			Usuario
+			<input type="text" [(ngModel)]="username" name="username" placeholder="usuario" />
+		</label>
+
+		<label>
+			Contraseña
+			<input type="password" [(ngModel)]="password" name="password" placeholder="contraseña" />
+		</label>
+
+		<button type="submit" [disabled]="loading">{{ loading ? 'Ingresando...' : 'Ingresar' }}</button>
+	</form>
+
+	<div class="message success" *ngIf="success">{{ success }}</div>
+	<div class="message error" *ngIf="error">{{ error }}</div>
+</div>

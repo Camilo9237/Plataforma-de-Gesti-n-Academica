@@ -1,16 +1,57 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime
-import uuid
+from keycloak import KeycloakOpenID
+from functools import wraps
+
 
 app = Flask(__name__)
-CORS(app, resources={
-    r"/*": {
-        "origins": ["http://localhost:4200", "https://your-frontend-domain.com"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
+app.secret_key = "PlataformaColegios"
+CORS(app)
+
+keycloak_openid = KeycloakOpenID(
+    server_url="http://localhost:8082",
+    client_id="01",
+    realm_name="platamaformaInstitucional",
+    client_secret_key="2m2KWH4lyYgh9CwoM1y2QI6bFrDjR3OV"
+)
+
+def tiene_rol(token_info, cliente_id, rol_requerido):
+    try:
+        # Revisar roles a nivel de realm
+        realm_roles = token_info.get("realm_access", {}).get("roles", [])
+        if rol_requerido in realm_roles:
+            return True
+
+        # Revisar roles a nivel de cliente (resource_access)
+        resource_roles = token_info.get("resource_access", {}).get(cliente_id, {}).get("roles", [])
+        if rol_requerido in resource_roles:
+            return True
+
+        return False
+    except Exception:
+        return False
+
+def token_required(rol_requerido):
+    def decorator(f):
+        @wraps(f)
+        def decorated (*args, **kwargs):
+            auth_header = request.headers.get('Authorization', None)
+            if not auth_header:
+                return jsonify({"error": "Token Requerido"}), 401
+            
+            try:
+                token = auth_header.split(" ")[1]
+                userinfo = keycloak_openid.decode_token(token)
+            except Exception as e:
+                return jsonify({"error": "Token inválido o expirado"}), 401
+            if not tiene_rol(userinfo, keycloak_openid.client_id, rol_requerido):
+                return jsonify({"error": f"Acceso denegado: se requiere el rol '{rol_requerido}'"}), 403
+            # guardar información del usuario en 'g' para que la función pueda acceder si lo necesita
+            g.userinfo = userinfo
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 # Base de datos en memoria para grupos
 groups_db = [
