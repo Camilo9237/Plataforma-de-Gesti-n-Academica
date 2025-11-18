@@ -1,1 +1,56 @@
+<div class="student-dashboard">
+  <h1>Panel Estudiante</h1>
+
+  <div class="top-row">
+    <div class="grades-card">
+      <div class="card-header">
+        <div>
+          <div class="title">Mis Calificaciones Recientes</div>
+          <div class="subtitle">Últimas evaluaciones registradas</div>
+        </div>
+        <div class="avg">{{ grades?.average ?? '—' }}</div>
+      </div>
+
+      <div class="grade-list">
+        <div class="grade-item" *ngFor="let g of grades?.recent">
+          <div class="subject">{{ g.subject }}</div>
+          <div class="meta">{{ g.date }}</div>
+          <div class="score">{{ g.grade }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notifications-card">
+      <div class="title">Notificaciones</div>
+      <div class="notes">
+        <div class="note" *ngFor="let n of notifications?.notifications">
+          <div class="note-title">{{ n.title }}</div>
+          <div class="note-type">{{ n.type }}</div>
+        </div>
+      </div>
+      <button class="view-btn">Ver Boletines</button>
+    </div>
+  </div>
+
+  <div class="schedule">
+    <h3>Horario de Hoy</h3>
+    <div class="schedule-grid">
+      <div class="event" *ngFor="let e of schedule?.events">
+        <div class="time">{{ e.time }}</div>
+        <div class="subject">{{ e.subject }}</div>
+        <div class="meta">{{ e.location }} · {{ e.teacher }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="quick-actions">
+    <button class="action">Boletines</button>
+    <button class="action">Horarios</button>
+    <button class="action">Tareas</button>
+    <button class="action">Certificados</button>
+  </div>
+
+  <div *ngIf="loading" class="loading">Cargando datos...</div>
+  <div *ngIf="error" class="error">{{ error }}</div>
+</div>
 <p>student works!</p>

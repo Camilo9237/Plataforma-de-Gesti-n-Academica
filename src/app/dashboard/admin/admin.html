@@ -1,1 +1,75 @@
+<div class="admin-dashboard">
+  <h1>Panel Administrativo</h1>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-title">Total Estudiantes</div>
+      <div class="card-value">{{ stats?.total_students ?? '—' }}</div>
+      <div class="card-sub">Estudiantes activos</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Matrículas Completas</div>
+      <div class="card-value">{{ stats?.enrollment_complete_pct ?? '—' }}%</div>
+      <div class="card-sub">Porcentaje</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Sedes Activas</div>
+      <div class="card-value">{{ stats?.active_campuses ?? '—' }}</div>
+      <div class="card-sub">Funcionando normalmente</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Docentes Activos</div>
+      <div class="card-value">{{ stats?.active_teachers ?? '—' }}</div>
+      <div class="card-sub">Personal docente</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <section class="left">
+      <h3>Tareas Pendientes</h3>
+      <ul class="tasks">
+        <li *ngFor="let t of pending?.tasks">
+          <div class="task-left">
+            <div class="task-title">{{ t.title }}</div>
+            <div class="task-count">{{ t.count }} pendientes</div>
+          </div>
+          <div class="task-badge" [class.urgent]="t.severity==='urgent'">{{ t.severity === 'urgent' ? 'Urgente' : '' }}</div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="middle">
+      <h3>Resumen de Sedes</h3>
+      <div *ngFor="let c of campuses" class="campus">
+        <div class="campus-header">
+          <div class="campus-name">{{ c.name }}</div>
+          <div class="campus-status">{{ c.status }}</div>
+        </div>
+        <div class="campus-stats">{{ c.students }} estudiantes</div>
+        <div class="progress">
+          <div class="progress-bar" [style.width.%]="c.occupancy_pct"></div>
+        </div>
+        <div class="campus-footer">Ocupación {{ c.occupancy_pct }}%</div>
+      </div>
+      <button class="btn">Gestionar Sedes</button>
+    </section>
+
+    <section class="right">
+      <h3>Estadísticas Recientes</h3>
+      <div class="recent" *ngFor="let r of recent?.recent">
+        <div class="recent-month">{{ r.month }}</div>
+        <div class="recent-values">Matriculas: {{ r.enrollments }} · Deserciones: {{ r.dropouts }} · Promedio: {{ r.avg }}</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="quick-actions">
+    <button class="action" (click)="goToMatriculas()">MATRICULAS</button>
+      <button class="action" (click)="goToInformes()">INFORMES</button>
+      <button class="action" (click)="goToUsuarios()">USUARIOS</button>
+    <button class="action" (click)="goToConfiguracion()">CONFIGURACION</button>
+  </div>
+  <div *ngIf="loading" class="loading">Cargando datos...</div>
+  <div *ngIf="error" class="error">{{ error }}</div>
+</div>
 <p>admin works!</p>

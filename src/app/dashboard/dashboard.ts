@@ -5,34 +5,8 @@ import { CommonModule } from '@angular/common';
   selector: 'app-dashboard',
   standalone: true,
   imports: [CommonModule],
-  template: `
-<div class="dashboard">
-  <div *ngIf="loading">Cargando dashboard...</div>
-
-  <div *ngIf="!loading && error" class="error">
-    <h3>Error</h3>
-    <p>{{ error }}</p>
-    <details *ngIf="details">
-      <summary>Detalles</summary>
-      <pre>{{ details | json }}</pre>
-    </details>
-  </div>
-
-  <div *ngIf="!loading && !error" class="welcome">
-    <h2>{{ message || ('Bienvenido' + (role ? (' ' + role) : '')) }}</h2>
-    <p><strong>Rol:</strong> {{ role || 'desconocido' }}</p>
-    <p><strong>Usuario:</strong> {{ user || 'desconocido' }}</p>
-    <p><strong>Hora:</strong> {{ time || '' }}</p>
-  </div>
-
-</div>
-  `,
-  styles: [
-    ".dashboard { padding: 16px; }",
-    ".error { color: #b00020; background:#fff0f0; padding:12px; border-radius:6px }",
-    ".welcome { background:#f6ffed; padding:12px; border-radius:6px }",
-    "pre { background:#f4f4f4; padding:8px; border-radius:4px }"
-  ]
+  templateUrl: './dashboard.html',
+  styleUrls: ['./dashboard.css']
 })
 export class Dashboard implements OnInit {
   loading: boolean = true;

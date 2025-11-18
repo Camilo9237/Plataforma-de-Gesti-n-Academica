@@ -27,6 +27,26 @@ export const routes: Routes = [
 		canActivate: [RoleGuard]
 	},
 	{
+		path: 'dashboard/admin/matriculas',
+		loadComponent: () => import('./dashboard/admin/matriculas/matriculas').then(m => m.Matriculas),
+		canActivate: [RoleGuard]
+	},
+	{
+		path: 'dashboard/admin/informes',
+		loadComponent: () => import('./dashboard/admin/informes/informes').then(m => m.Informes),
+		canActivate: [RoleGuard]
+	},
+	{
+		path: 'dashboard/admin/configuracion',
+		loadComponent: () => import('./dashboard/admin/configuracion/configuracion').then(m => m.Configuracion),
+		canActivate: [RoleGuard]
+	},
+	{
+		path: 'dashboard/admin/usuarios',
+		loadComponent: () => import('./dashboard/admin/usuarios/usuarios').then(m => m.Usuarios),
+		canActivate: [RoleGuard]
+	},
+	{
 		path: '',
 		redirectTo: 'login',
 		pathMatch: 'full'

@@ -1,1 +1,39 @@
+<div class="teacher-dashboard">
+  <h1>Panel Docente</h1>
+
+  <div class="main-grid">
+    <section class="left">
+      <h3>Mis Grupos</h3>
+      <div *ngFor="let g of groups" class="group">
+        <div class="group-row">
+          <div class="group-name">{{ g.name }}</div>
+          <button class="view">Ver Grupo</button>
+        </div>
+        <div class="progress"><div class="bar" [style.width.%]="g.progress_pct"></div></div>
+        <div class="meta">{{ g.students }} estudiantes · Progreso {{ g.progress_pct }}%</div>
+      </div>
+    </section>
+
+    <section class="right">
+      <h3>Calificaciones Pendientes</h3>
+      <ul class="pending">
+        <li *ngFor="let p of pending?.pending">
+          <div class="course">{{ p.course }}</div>
+          <div class="count">{{ p.pending }} pendientes</div>
+        </li>
+      </ul>
+      <button class="go">Ir a Calificaciones</button>
+    </section>
+  </div>
+
+  <div class="actions">
+    <button class="action">Registro de Notas</button>
+    <button class="action">Asistencia</button>
+    <button class="action">Observaciones</button>
+    <button class="action">Reportes</button>
+  </div>
+
+  <div *ngIf="loading" class="loading">Cargando datos...</div>
+  <div *ngIf="error" class="error">{{ error }}</div>
+</div>
 <p>teacher works!</p>
