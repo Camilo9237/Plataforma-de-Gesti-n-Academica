@@ -1,0 +1,16 @@
+.back{ display:inline-block; margin:12px 0; color:#2b6a4a; text-decoration:none; }
+.cert-root{ padding:16px }
+.cert-header h2{ margin:0; color:#0b6b3a }
+.cert-header .hint{ color:#666; margin-top:6px }
+.info-box{ border:1px solid #e6f0ea; background:#f8fff8; padding:12px; border-radius:8px; margin:12px 0 }
+.tipos-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin:12px 0 }
+.tipo{ border:1px solid #e6f0ea; padding:12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center }
+.tipo-name{ font-weight:600; color:#0b6b3a }
+.tipo-desc{ color:#666; font-size:13px }
+.tipo-actions .btn{ margin-left:12px }
+.mis-certificados{ margin-top:18px }
+.mis-certificados .list{ display:flex; flex-direction:column; gap:8px }
+.mis-certificados .item{ border:1px solid #e6f0ea; padding:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center }
+.mis-certificados .type{ font-weight:600 }
+.btn{ border:1px solid #d1d9d5; background:#fff; padding:8px 12px; border-radius:6px; cursor:pointer }
+.btn.primary{ background:#2b6a4a; color:#fff; border:0 }

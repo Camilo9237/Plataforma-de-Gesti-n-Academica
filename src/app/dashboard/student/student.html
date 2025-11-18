@@ -1,8 +1,13 @@
 <div class="student-dashboard">
-  <h1>Panel Estudiante</h1>
+  <header class="page-header">
+    <div>
+      <h1>Panel Estudiante</h1>
+      <p class="hint">Consulta tus calificaciones y horarios</p>
+    </div>
+  </header>
 
   <div class="top-row">
-    <div class="grades-card">
+    <section class="grades-card card">
       <div class="card-header">
         <div>
           <div class="title">Mis Calificaciones Recientes</div>
@@ -11,46 +16,72 @@
         <div class="avg">{{ grades?.average ?? '—' }}</div>
       </div>
 
+      <div class="progress">
+        <div class="progress-fill" [style.width.%]="(grades?.average || 0) / 5 * 100"></div>
+      </div>
+
       <div class="grade-list">
         <div class="grade-item" *ngFor="let g of grades?.recent">
-          <div class="subject">{{ g.subject }}</div>
-          <div class="meta">{{ g.date }}</div>
+          <div class="left">
+            <span class="dot"></span>
+            <div class="subject">{{ g.subject }}</div>
+            <div class="meta">{{ g.date }}</div>
+          </div>
           <div class="score">{{ g.grade }}</div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="notifications-card">
+    <aside class="notifications-card card">
       <div class="title">Notificaciones</div>
+
+      <div *ngIf="notifications?.urgent" class="alert">{{ notifications.urgent }}</div>
+
       <div class="notes">
         <div class="note" *ngFor="let n of notifications?.notifications">
           <div class="note-title">{{ n.title }}</div>
-          <div class="note-type">{{ n.type }}</div>
+          <div class="note-type">{{ n.date }}</div>
         </div>
       </div>
+
       <button class="view-btn">Ver Boletines</button>
-    </div>
+    </aside>
   </div>
 
-  <div class="schedule">
-    <h3>Horario de Hoy</h3>
+  <section class="schedule card">
+    <div class="schedule-header">
+      <h3>Horario de Hoy</h3>
+      <div class="date">{{ schedule?.date }}</div>
+    </div>
+
     <div class="schedule-grid">
       <div class="event" *ngFor="let e of schedule?.events">
-        <div class="time">{{ e.time }}</div>
-        <div class="subject">{{ e.subject }}</div>
-        <div class="meta">{{ e.location }} · {{ e.teacher }}</div>
+        <div class="event-time">{{ e.time }}</div>
+        <div class="event-subject">{{ e.subject }}</div>
+        <div class="event-meta">{{ e.teacher }} · {{ e.location }}</div>
       </div>
     </div>
-  </div>
+  </section>
 
   <div class="quick-actions">
-    <button class="action">Boletines</button>
-    <button class="action">Horarios</button>
-    <button class="action">Tareas</button>
-    <button class="action">Certificados</button>
+    <a class="action" routerLink="/dashboard/student/boletines"> 
+      <div class="icon">📄</div>
+      <div class="label">Boletines</div>
+    </a>
+    <a class="action" routerLink="/dashboard/student/horario">
+      <div class="icon">📅</div>
+      <div class="label">Horarios</div>
+    </a>
+    <a class="action" routerLink="/dashboard/student/tareas">
+      <div class="icon">📚</div>
+      <div class="label">Tareas</div>
+    </a>
+    <a class="action" routerLink="/dashboard/student/certificados">
+      <div class="icon">⬇️</div>
+      <div class="label">Certificados</div>
+    </a>
   </div>
 
   <div *ngIf="loading" class="loading">Cargando datos...</div>
   <div *ngIf="error" class="error">{{ error }}</div>
 </div>
-<p>student works!</p>

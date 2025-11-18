@@ -1,0 +1,71 @@
+<a class="back" routerLink="/dashboard/teacher">← Volver al Dashboard</a>
+
+<section class="grades-root">
+  <header class="grades-header">
+    <h2>Registro de Calificaciones</h2>
+    <p class="hint">Ingresa y gestiona las notas de tus estudiantes</p>
+  </header>
+
+  <div class="selection card">
+    <div class="field">
+      <label>Grupo</label>
+      <select [(ngModel)]="grupoSeleccionado">
+        <option [ngValue]="null">Seleccionar grupo</option>
+        <option *ngFor="let g of grupos" [ngValue]="g">{{ g.name }}</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Periodo</label>
+      <select [(ngModel)]="periodoSeleccionado">
+        <option [ngValue]="null">Seleccionar periodo</option>
+        <option *ngFor="let p of periodos" [ngValue]="p">{{ p }}</option>
+      </select>
+    </div>
+    <div class="field search">
+      <label>Buscar Estudiante</label>
+      <input placeholder="Nombre o código" />
+    </div>
+    <div class="field avg">
+      <label>Promedio del Grupo</label>
+      <div class="big">4.00</div>
+    </div>
+  </div>
+
+  <section class="students card">
+    <div class="students-title">Lista de Estudiantes</div>
+    <div class="students-sub">Selecciona un grupo - Selecciona un periodo</div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Nota 1</th>
+          <th>Nota 2</th>
+          <th>Nota 3</th>
+          <th>Promedio</th>
+          <th>Observaciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let s of estudiantes">
+          <td class="code">{{ s.codigo }}</td>
+          <td class="name">{{ s.nombre }}</td>
+          <td><input type="number" [(ngModel)]="s.nota1" step="0.1" /></td>
+          <td><input type="number" [(ngModel)]="s.nota2" step="0.1" /></td>
+          <td><input type="number" [(ngModel)]="s.nota3" step="0.1" /></td>
+          <td><span class="chip">{{ s.promedio }}</span></td>
+          <td><input [(ngModel)]="s.observaciones" placeholder="Observaciones..." /></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="actions-row">
+      <label class="auto"><input type="checkbox" /> Calcular Promedio Automático</label>
+      <div class="buttons">
+        <button class="btn" (click)="calcularPromediosAuto()">Calcular Promedio Automático</button>
+        <button class="btn primary" (click)="guardarCalificaciones()">Guardar Calificaciones</button>
+      </div>
+    </div>
+  </section>
+</section>

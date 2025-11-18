@@ -1,0 +1,31 @@
+.horario-page { padding:20px; font-family: Inter, Arial, sans-serif; color:#183c35 }
+.page-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px }
+.back { color:#2b6b54; text-decoration:none; font-weight:700 }
+.title-block h2 { margin:0; font-size:18px }
+.hint { margin:0; color:#6b7a73; font-size:13px }
+.actions { display:flex; gap:8px; align-items:center }
+.grade-select { padding:8px 10px; border-radius:6px; border:1px solid #d7e7df }
+.download { background:#2d8b59; color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:700 }
+
+.week-nav { display:flex; align-items:center; gap:12px; margin-bottom:12px }
+.week-range { color:#6b7a73 }
+.btn { background:#eef8ef; border:1px solid #e6f3ea; padding:6px 10px; border-radius:6px }
+
+.schedule-grid { display:grid; grid-template-columns: repeat(5,1fr); gap:12px; margin-bottom:14px }
+.day-col { background:#fff; border:1px solid #eaf3ed; border-radius:8px; padding:10px }
+.day-header { font-weight:700; margin-bottom:8px }
+.lesson { background:#fbfffb; border:1px solid #f0f7f1; padding:8px; border-radius:8px; margin-bottom:8px }
+.time { font-size:12px; color:#6b7a73 }
+.lesson-subject { font-weight:700 }
+.lesson-meta { font-size:12px; color:#93a39b }
+
+.summary { padding:14px }
+.summary-grid { display:flex; gap:12px; justify-content:space-between }
+.summary .item { background:#fff; padding:12px; border-radius:8px; border:1px solid #eaf3ed; width:32% }
+.summary .label { font-size:12px; color:#6b7a73 }
+.summary .value { font-weight:700; font-size:18px; margin-top:6px }
+
+@media (max-width:900px) {
+  .schedule-grid { grid-template-columns: repeat(2,1fr) }
+  .summary-grid { flex-direction:column; gap:8px }
+}

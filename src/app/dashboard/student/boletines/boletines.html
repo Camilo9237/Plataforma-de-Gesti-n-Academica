@@ -1,0 +1,71 @@
+<div class="boletines-page">
+  <a class="back" routerLink="/dashboard/student">← Volver al Dashboard</a>
+  <div class="page-header">
+    <h2>Consulta de Boletines</h2>
+    <div class="actions">
+      <select class="period-select">
+        <option>Selec. Periodo</option>
+      </select>
+      <button class="download" (click)="downloadPdf()">Descargar PDF</button>
+    </div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="card stat">
+      <div class="label">Promedio General</div>
+      <div class="value">4.15</div>
+    </div>
+    <div class="card stat">
+      <div class="label">Materias Aprobadas</div>
+      <div class="value">7</div>
+    </div>
+    <div class="card stat">
+      <div class="label">Materias Reprobadas</div>
+      <div class="value">0</div>
+    </div>
+    <div class="card stat">
+      <div class="label">Tendencia</div>
+      <div class="value">↑</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="card grades-table">
+      <div class="card-title">Calificaciones por Materia</div>
+      <table>
+        <thead>
+          <tr><th>Materia</th><th>Nota1</th><th>Nota2</th><th>Nota3</th><th>Promedio</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Matemáticas</td><td>4.0</td><td>4.2</td><td>4.1</td><td>4.1</td><td class="ok">aprobado</td>
+          </tr>
+          <tr>
+            <td>Español</td><td>4.5</td><td>4.3</td><td>4.6</td><td>4.4</td><td class="ok">aprobado</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card side-panel">
+      <div class="card-title">Progreso Académico</div>
+      <div class="chart-placeholder">[gráfico]</div>
+
+      <div class="insights">
+        <div class="box info">
+          <strong>Observaciones del Periodo</strong>
+          <ul>
+            <li>Participación adecuada en clase</li>
+          </ul>
+        </div>
+
+        <div class="box warn">
+          <strong>Áreas de Mejora</strong>
+          <ul>
+            <li>Refuerzo en resolución de problemas</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

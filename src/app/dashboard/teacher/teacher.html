@@ -1,39 +1,62 @@
-<div class="teacher-dashboard">
-  <h1>Panel Docente</h1>
+<div class="teacher-root">
+  <header class="page-header">
+    <div>
+      <h1>Panel Docente</h1>
+      <p class="hint">Gestiona tus clases y calificaciones</p>
+    </div>
+  </header>
 
-  <div class="main-grid">
-    <section class="left">
-      <h3>Mis Grupos</h3>
-      <div *ngFor="let g of groups" class="group">
-        <div class="group-row">
-          <div class="group-name">{{ g.name }}</div>
-          <button class="view">Ver Grupo</button>
+  <div class="grid-row">
+    <section class="card groups-card">
+      <div class="card-title">Mis Grupos</div>
+      <div class="groups-list">
+        <div *ngFor="let g of groups" class="group-item">
+          <div class="group-info">
+            <div class="group-name">{{ g.name }}</div>
+            <div class="group-meta">{{ g.students }} estudiantes</div>
+          </div>
+          <div class="group-actions">
+            <a class="btn-outline" [routerLink]="['/dashboard/teacher/group', g.id]">Ver Grupo</a>
+          </div>
+          <div class="progress-line">
+            <div class="progress-fill" [style.width.%]="g.progress_pct"></div>
+          </div>
+          <div class="progress-label">Progreso del período <span class="pct">{{ g.progress_pct }}%</span></div>
         </div>
-        <div class="progress"><div class="bar" [style.width.%]="g.progress_pct"></div></div>
-        <div class="meta">{{ g.students }} estudiantes · Progreso {{ g.progress_pct }}%</div>
       </div>
     </section>
 
-    <section class="right">
-      <h3>Calificaciones Pendientes</h3>
-      <ul class="pending">
+    <aside class="card pending-card">
+      <div class="card-title">Notas pendientes</div>
+      <ul class="pending-list">
         <li *ngFor="let p of pending?.pending">
           <div class="course">{{ p.course }}</div>
           <div class="count">{{ p.pending }} pendientes</div>
         </li>
       </ul>
-      <button class="go">Ir a Calificaciones</button>
-    </section>
+      <a class="btn-primary full" routerLink="/dashboard/teacher/grades">Ver notas</a>
+    </aside>
   </div>
 
-  <div class="actions">
-    <button class="action">Registro de Notas</button>
-    <button class="action">Asistencia</button>
-    <button class="action">Observaciones</button>
-    <button class="action">Reportes</button>
+  <div class="actions-grid">
+    <a class="action-tile" routerLink="/dashboard/teacher/grades">
+      <div class="icon">📖</div>
+      <div class="label">Registro de Notas</div>
+      <div class="sub">Calificar evaluaciones</div>
+    </a>
+    <a class="action-tile" routerLink="/dashboard/teacher/attendance">
+      <div class="icon">🗓️</div>
+      <div class="label">Asistencia</div>
+      <div class="sub">Control de asistencia</div>
+    </a>
+    <a class="action-tile" routerLink="/dashboard/teacher/observations">
+      <div class="icon">📝</div>
+      <div class="label">Observaciones</div>
+      <div class="sub">Registro disciplinario</div>
+    </a>
+    <!-- Reportes tile removed per request -->
   </div>
 
   <div *ngIf="loading" class="loading">Cargando datos...</div>
   <div *ngIf="error" class="error">{{ error }}</div>
 </div>
-<p>teacher works!</p>

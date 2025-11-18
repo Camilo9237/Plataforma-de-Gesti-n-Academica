@@ -1,0 +1,52 @@
+<a class="back" routerLink="/dashboard/student">← Volver al Dashboard</a>
+
+<section class="tareas-root">
+  <header class="tareas-header">
+    <h2>Mis Tareas</h2>
+    <p class="sub">Gestiona tus trabajos y entregas</p>
+  </header>
+
+  <div class="tareas-summary">
+    <div class="stat">
+      <strong>Pendientes</strong>
+      <span>4</span>
+    </div>
+    <div class="stat">
+      <strong>Entregadas</strong>
+      <span>3</span>
+    </div>
+    <div class="stat">
+      <strong>Urgentes</strong>
+      <span>1</span>
+    </div>
+    <div class="stat">
+      <strong>Promedio</strong>
+      <span>4.8</span>
+    </div>
+  </div>
+
+  <div class="lista-tareas">
+    <div *ngFor="let t of tareas" class="tarea-card">
+      <div class="tarea-top">
+        <div class="titulo">
+          <h3>{{ t.titulo }}</h3>
+          <small class="asignatura">{{ t.asignatura }}</small>
+        </div>
+        <div class="meta">
+          <div class="fecha">Entrega: {{ t.entrega }}</div>
+          <div class="estado">{{ t.estado }}</div>
+        </div>
+      </div>
+
+      <div class="descripcion">
+        <div class="progress">
+          <div class="bar" [style.width.%]="t.progreso"></div>
+        </div>
+        <div class="actions">
+          <button class="btn" (click)="descargar(t)">Descargar</button>
+          <button class="btn primary" (click)="entregar(t)">Entregar Tarea</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

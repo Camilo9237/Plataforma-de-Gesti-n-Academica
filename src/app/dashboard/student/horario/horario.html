@@ -1,0 +1,41 @@
+<div class="horario-page">
+<div class="page-header">
+    <a class="back" routerLink="/dashboard/student">← Volver al Dashboard</a>
+    <div class="title-block">
+    <h2>Horario Académico</h2>
+    <p class="hint">Consulta tu horario de clase semanal</p>
+    </div>
+    <div class="actions">
+    <select class="grade-select">
+        <option>Grado 10-A</option>
+        <option>Grado 10-B</option>
+    </select>
+    <button class="download" (click)="downloadPdf()">Descargar PDF</button>
+    </div>
+</div>
+
+<div class="week-nav">
+    <button class="btn">←</button>
+    <div class="week-range">Semana del 18 - 22 Nov 2024</div>
+    <button class="btn">→</button>
+</div>
+
+  <div class="schedule-grid card">
+    <div class="day-col" *ngFor="let d of ['Lunes','Martes','Miércoles','Jueves','Viernes']">
+      <div class="day-header">{{ d }}</div>
+      <div class="lesson" *ngFor="let i of [1,2,3,4,5]">
+        <div class="time">7:00 - 7:45</div>
+        <div class="lesson-subject">Matemáticas</div>
+        <div class="lesson-meta">Prof. García · A101</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary card">
+    <div class="summary-grid">
+      <div class="item"><div class="label">Total de Clases</div><div class="value">30</div></div>
+      <div class="item"><div class="label">Horas Semanales</div><div class="value">22.5 hrs</div></div>
+      <div class="item"><div class="label">Materias</div><div class="value">12</div></div>
+    </div>
+  </div>
+</div>

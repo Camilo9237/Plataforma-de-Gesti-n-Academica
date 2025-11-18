@@ -1,0 +1,40 @@
+<a class="back" routerLink="/dashboard/student">← Volver al Dashboard</a>
+
+<section class="cert-root">
+  <header class="cert-header">
+    <h2>Certificados Académicos</h2>
+    <p class="hint">Solicita y descarga tus certificados oficiales</p>
+  </header>
+
+  <div class="info-box">
+    <strong>Información importante</strong>
+    <p>Al solicitar un certificado, este podrá tardar unos minutos en generarse. Algunos certificados pueden tener costo administrativo.</p>
+  </div>
+
+  <div class="tipos-grid">
+    <div class="tipo" *ngFor="let t of tipos">
+      <div class="tipo-body">
+        <div class="tipo-name">{{ t.nombre }}</div>
+        <div class="tipo-desc">{{ t.descripcion }}</div>
+      </div>
+      <div class="tipo-actions">
+        <button class="btn primary" (click)="solicitar(t)">Solicitar Certificado</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="mis-certificados">
+    <h3>Mis Certificados</h3>
+    <div class="list">
+      <div class="item" *ngFor="let c of misCertificados">
+        <div class="left">
+          <div class="type">{{ c.tipo }}</div>
+          <div class="meta">{{ c.fecha }} · {{ c.formato }}</div>
+        </div>
+        <div class="right">
+          <button class="btn" (click)="descargar(c)" [disabled]="!c.descargable">Descargar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</section>

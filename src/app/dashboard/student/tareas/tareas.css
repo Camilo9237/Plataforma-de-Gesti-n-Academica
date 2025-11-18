@@ -1,0 +1,19 @@
+.back{ display:inline-block; margin:12px 0; color:#2b6a4a; text-decoration:none; }
+.tareas-root{ padding:16px; }
+.tareas-header{ margin-bottom:12px }
+.tareas-header h2{ margin:0; color:#0b6b3a }
+.tareas-header .sub{ color:#666; margin-top:4px }
+.tareas-summary{ display:flex; gap:12px; margin:12px 0 20px }
+.tareas-summary .stat{ background:#fff; border:1px solid #e6f0ea; padding:12px 16px; border-radius:8px; min-width:120px; text-align:center }
+.lista-tareas{ display:flex; flex-direction:column; gap:12px }
+.tarea-card{ border:1px solid #e6f0ea; padding:12px; border-radius:8px; background:#fff }
+.tarea-top{ display:flex; justify-content:space-between; align-items:center }
+.tarea-top .titulo h3{ margin:0; color:#0b6b3a }
+.tarea-top .asignatura{ color:#2b6a4a; font-size:12px }
+.meta{ text-align:right; color:#666 }
+.descripcion{ margin-top:10px; display:flex; justify-content:space-between; align-items:center }
+.progress{ flex:1; height:8px; background:#f1f6f3; border-radius:4px; margin-right:12px; overflow:hidden }
+.progress .bar{ height:100%; background:linear-gradient(90deg,#2b6a4a,#62b07a) }
+.actions{ display:flex; gap:8px }
+.btn{ border:1px solid #d1d9d5; background:#fff; padding:8px 12px; border-radius:6px; cursor:pointer }
+.btn.primary{ background:#2b6a4a; color:#fff; border:0 }

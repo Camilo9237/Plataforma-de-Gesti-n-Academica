@@ -1,0 +1,68 @@
+<a class="back" routerLink="/dashboard/teacher">← Volver al Dashboard</a>
+
+<section class="obs-root">
+  <header class="obs-header">
+    <h2>Observaciones del Estudiante</h2>
+    <p class="hint">Registro y seguimiento de comportamiento académico y disciplinario</p>
+  </header>
+
+  <div class="summary card">
+    <div class="stat">Total<br/><strong>{{ resumen.total }}</strong></div>
+    <div class="stat">Positivas<br/><strong>{{ resumen.positivas }}</strong></div>
+    <div class="stat">Negativas<br/><strong>{{ resumen.negativas }}</strong></div>
+    <div class="stat">Neutrales<br/><strong>{{ resumen.neutrales }}</strong></div>
+    <div class="actions">
+      <button class="btn primary" (click)="nuevaObservacion()">+ Nueva Observación</button>
+    </div>
+  </div>
+
+  <div class="filters card">
+    <input placeholder="Buscar por estudiante o descripción..." [(ngModel)]="filtros.texto" />
+    <select [(ngModel)]="filtros.tipo">
+      <option>Todas</option>
+      <option>Positiva</option>
+      <option>Negativa</option>
+      <option>Neutral</option>
+    </select>
+    <select [(ngModel)]="filtros.grupo">
+      <option>Todos los Grupos</option>
+      <option>10ºA</option>
+      <option>11ºB</option>
+    </select>
+  </div>
+
+  <div class="list card">
+    <div class="list-title">Registro de Observaciones</div>
+    <div class="list-sub">{{ observaciones.length }} observación(es) encontrada(s)</div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Estudiante</th>
+          <th>Grupo</th>
+          <th>Tipo</th>
+          <th>Descripción</th>
+          <th>Seguimiento</th>
+          <th>Docente</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let o of observaciones">
+          <td>{{ o.fecha }}</td>
+          <td>{{ o.estudiante }}</td>
+          <td>{{ o.grupo }}</td>
+          <td><span class="chip {{ o.tipo.toLowerCase() }}">{{ o.tipo }}</span></td>
+          <td>{{ o.descripcion }}</td>
+          <td>{{ o.seguimiento }}</td>
+          <td>{{ o.docente }}</td>
+          <td>
+            <button class="btn" (click)="editar(o)">✎</button>
+            <button class="btn danger" (click)="eliminar(o)">🗑</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>

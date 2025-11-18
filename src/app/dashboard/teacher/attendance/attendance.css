@@ -1,0 +1,18 @@
+.back{ display:inline-block; margin:12px 0; color:#2b6a4a; text-decoration:none }
+.attendance-root{ padding:16px }
+.attendance-header h2{ margin:0; color:#0b6b3a }
+.attendance-header .hint{ color:#666; margin-top:6px }
+.card{ background:#fff; border:1px solid #e6f0ea; padding:12px; border-radius:8px; margin-bottom:12px }
+.selection{ display:flex; gap:12px; align-items:end }
+.field{ display:flex; flex-direction:column; min-width:160px }
+.field label{ font-size:13px; color:#666; margin-bottom:6px }
+.field select, .field input{ padding:8px; border-radius:6px; border:1px solid #e6f0ea }
+.field.actions{ display:flex; gap:8px }
+.students .students-title{ font-weight:600; color:#0b6b3a }
+.students .students-sub{ color:#666; font-size:13px; margin-bottom:8px }
+.table{ width:100%; border-collapse:collapse }
+.table thead th{ text-align:left; padding:10px; color:#666; font-weight:600 }
+.table tbody td{ padding:10px; border-top:1px solid #f1f6f3; vertical-align:middle }
+.actions-row{ display:flex; justify-content:space-between; align-items:center; margin-top:12px }
+.btn{ padding:8px 12px; border-radius:6px; border:1px solid #d1d9d5; background:#fff; cursor:pointer }
+.btn.primary{ background:#0b6b3a; color:#fff; border:0 }
