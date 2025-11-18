@@ -1,7 +1,18 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime
-import uuid
+import sys
+import os
+
+# Agregar el path del backend para importar db_config
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from database.db_config import (
+    get_usuarios_collection, 
+    get_matriculas_collection,
+    serialize_doc, 
+    string_to_objectid,
+    registrar_auditoria
+)
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -12,57 +23,13 @@ CORS(app, resources={
     }
 })
 
-# Base de datos en memoria para estudiantes
-students_db = [
-    {
-        'id': '1',
-        'name': 'Juan Pérez',
-        'email': 'juan.perez@email.com',
-        'phone': '555-0101',
-        'address': 'Calle 123 #45-67',
-        'birth_date': '2008-05-15',
-        'grade_level': '10',
-        'status': 'active',
-        'parent_name': 'María Pérez',
-        'parent_phone': '555-0102',
-        'created_at': '2024-01-15T10:30:00Z',
-        'updated_at': '2024-01-15T10:30:00Z'
-    },
-    {
-        'id': '2',
-        'name': 'Ana García',
-        'email': 'ana.garcia@email.com',
-        'phone': '555-0201',
-        'address': 'Carrera 456 #78-90',
-        'birth_date': '2009-03-22',
-        'grade_level': '9',
-        'status': 'active',
-        'parent_name': 'Carlos García',
-        'parent_phone': '555-0202',
-        'created_at': '2024-01-16T14:20:00Z',
-        'updated_at': '2024-01-16T14:20:00Z'
-    },
-    {
-        'id': '3',
-        'name': 'Luis Martínez',
-        'email': 'luis.martinez@email.com',
-        'phone': '555-0301',
-        'address': 'Avenida 789 #12-34',
-        'birth_date': '2007-11-08',
-        'grade_level': '11',
-        'status': 'active',
-        'parent_name': 'Elena Martínez',
-        'parent_phone': '555-0302',
-        'created_at': '2024-01-17T16:45:00Z',
-        'updated_at': '2024-01-17T16:45:00Z'
-    }
-]
 
 @app.route('/')
 def home():
     return jsonify({
         'service': 'Students Service',
-        'version': '1.0.0',
+        'version': '2.0.0',
+        'database': 'MongoDB',
         'endpoints': {
             'get_all': 'GET /students',
             'get_one': 'GET /students/{id}',
@@ -74,28 +41,33 @@ def home():
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy', 'service': 'students'})
+    return jsonify({'status': 'healthy', 'service': 'students', 'database': 'MongoDB'})
 
 @app.route('/students', methods=['GET'])
 def get_students():
     """Obtener todos los estudiantes"""
     try:
+        usuarios = get_usuarios_collection()
+        
         # Filtros opcionales
-        grade_level = request.args.get('grade_level')
-        status = request.args.get('status', 'active')
+        grado = request.args.get('grade_level')
+        status = request.args.get('status')
         
-        filtered_students = students_db
-        
-        if grade_level:
-            filtered_students = [s for s in filtered_students if s.get('grade_level') == grade_level]
+        # Construir query
+        query = {'rol': 'estudiante'}
         
         if status:
-            filtered_students = [s for s in filtered_students if s.get('status') == status]
+            query['activo'] = (status == 'active')
+        
+        # Buscar estudiantes
+        estudiantes = list(usuarios.find(query))
+        
+        # Serializar documentos
+        estudiantes_serializados = serialize_doc(estudiantes)
         
         return jsonify({
-            'students': filtered_students,
-            'count': len(filtered_students),
-            'total': len(students_db)
+            'students': estudiantes_serializados,
+            'count': len(estudiantes_serializados)
         }), 200
         
     except Exception as e:
@@ -105,12 +77,20 @@ def get_students():
 def get_student(student_id):
     """Obtener un estudiante por ID"""
     try:
-        student = next((s for s in students_db if s['id'] == student_id), None)
+        usuarios = get_usuarios_collection()
         
-        if not student:
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(student_id)
+        if not obj_id:
+            return jsonify({'error': 'Invalid student ID'}), 400
+        
+        # Buscar estudiante
+        estudiante = usuarios.find_one({'_id': obj_id, 'rol': 'estudiante'})
+        
+        if not estudiante:
             return jsonify({'error': 'Student not found'}), 404
         
-        return jsonify({'student': student}), 200
+        return jsonify({'student': serialize_doc(estudiante)}), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -125,39 +105,50 @@ def create_student():
             return jsonify({'error': 'No data provided'}), 400
         
         # Validar campos requeridos
-        required_fields = ['name', 'email', 'phone']
+        required_fields = ['correo', 'nombres', 'apellidos']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
-        # Verificar si el email ya existe
-        if any(s['email'] == data['email'] for s in students_db):
+        usuarios = get_usuarios_collection()
+        
+        # Verificar si el correo ya existe
+        if usuarios.find_one({'correo': data['correo']}):
             return jsonify({'error': 'Email already exists'}), 400
         
-        # Crear estudiante
-        new_id = str(len(students_db) + 1)
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-        
-        student = {
-            'id': new_id,
-            'name': data['name'],
-            'email': data['email'],
-            'phone': data['phone'],
-            'address': data.get('address', ''),
-            'birth_date': data.get('birth_date', ''),
-            'grade_level': data.get('grade_level', ''),
-            'status': data.get('status', 'active'),
-            'parent_name': data.get('parent_name', ''),
-            'parent_phone': data.get('parent_phone', ''),
-            'created_at': timestamp,
-            'updated_at': timestamp
+        # Crear documento de estudiante
+        estudiante = {
+            'correo': data['correo'],
+            'rol': 'estudiante',
+            'nombres': data['nombres'],
+            'apellidos': data['apellidos'],
+            'codigo_est': data.get('codigo_est', ''),
+            'telefono': data.get('telefono', ''),
+            'fecha_nacimiento': datetime.fromisoformat(data['fecha_nacimiento']) if data.get('fecha_nacimiento') else None,
+            'direccion': data.get('direccion', ''),
+            'nombre_acudiente': data.get('nombre_acudiente', ''),
+            'telefono_acudiente': data.get('telefono_acudiente', ''),
+            'activo': data.get('activo', True),
+            'creado_en': datetime.utcnow()
         }
         
-        students_db.append(student)
+        # Insertar en MongoDB
+        result = usuarios.insert_one(estudiante)
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='crear_estudiante',
+            entidad_afectada='usuarios',
+            id_entidad=str(result.inserted_id),
+            detalles=f"Estudiante creado: {data['nombres']} {data['apellidos']}"
+        )
+        
+        estudiante['_id'] = result.inserted_id
         
         return jsonify({
             'message': 'Student created successfully',
-            'student': student
+            'student': serialize_doc(estudiante)
         }), 201
         
     except Exception as e:
@@ -172,30 +163,58 @@ def update_student(student_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        # Buscar estudiante
-        student_index = next((i for i, s in enumerate(students_db) if s['id'] == student_id), None)
+        usuarios = get_usuarios_collection()
         
-        if student_index is None:
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(student_id)
+        if not obj_id:
+            return jsonify({'error': 'Invalid student ID'}), 400
+        
+        # Verificar que el estudiante existe
+        estudiante = usuarios.find_one({'_id': obj_id, 'rol': 'estudiante'})
+        if not estudiante:
             return jsonify({'error': 'Student not found'}), 404
         
         # Verificar email único (si se está actualizando)
-        if 'email' in data:
-            existing_email = any(s['email'] == data['email'] and s['id'] != student_id for s in students_db)
-            if existing_email:
+        if 'correo' in data and data['correo'] != estudiante.get('correo'):
+            if usuarios.find_one({'correo': data['correo']}):
                 return jsonify({'error': 'Email already exists'}), 400
         
-        # Actualizar campos
-        updatable_fields = ['name', 'email', 'phone', 'address', 'birth_date', 'grade_level', 'status', 'parent_name', 'parent_phone']
+        # Preparar actualización
+        update_data = {}
+        updatable_fields = ['nombres', 'apellidos', 'correo', 'telefono', 'codigo_est', 
+                          'direccion', 'nombre_acudiente', 'telefono_acudiente', 'activo']
         
         for field in updatable_fields:
             if field in data:
-                students_db[student_index][field] = data[field]
+                update_data[field] = data[field]
         
-        students_db[student_index]['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        # Manejar fecha de nacimiento
+        if 'fecha_nacimiento' in data and data['fecha_nacimiento']:
+            update_data['fecha_nacimiento'] = datetime.fromisoformat(data['fecha_nacimiento'])
+        
+        # Actualizar en MongoDB
+        result = usuarios.update_one(
+            {'_id': obj_id},
+            {'$set': update_data}
+        )
+        
+        if result.modified_count > 0:
+            # Registrar auditoría
+            registrar_auditoria(
+                id_usuario=None,
+                accion='actualizar_estudiante',
+                entidad_afectada='usuarios',
+                id_entidad=student_id,
+                detalles=f"Estudiante actualizado: {update_data.get('nombres', '')} {update_data.get('apellidos', '')}"
+            )
+        
+        # Obtener estudiante actualizado
+        estudiante_actualizado = usuarios.find_one({'_id': obj_id})
         
         return jsonify({
             'message': 'Student updated successfully',
-            'student': students_db[student_index]
+            'student': serialize_doc(estudiante_actualizado)
         }), 200
         
     except Exception as e:
@@ -203,22 +222,43 @@ def update_student(student_id):
 
 @app.route('/students/<student_id>', methods=['DELETE'])
 def delete_student(student_id):
-    """Eliminar un estudiante"""
+    """Eliminar (desactivar) un estudiante"""
     try:
-        student_index = next((i for i, s in enumerate(students_db) if s['id'] == student_id), None)
+        usuarios = get_usuarios_collection()
         
-        if student_index is None:
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(student_id)
+        if not obj_id:
+            return jsonify({'error': 'Invalid student ID'}), 400
+        
+        # Buscar estudiante
+        estudiante = usuarios.find_one({'_id': obj_id, 'rol': 'estudiante'})
+        if not estudiante:
             return jsonify({'error': 'Student not found'}), 404
         
-        deleted_student = students_db.pop(student_index)
+        # Desactivar en lugar de eliminar
+        result = usuarios.update_one(
+            {'_id': obj_id},
+            {'$set': {'activo': False}}
+        )
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='desactivar_estudiante',
+            entidad_afectada='usuarios',
+            id_entidad=student_id,
+            detalles=f"Estudiante desactivado: {estudiante.get('nombres')} {estudiante.get('apellidos')}"
+        )
         
         return jsonify({
-            'message': 'Student deleted successfully',
-            'deleted_student': deleted_student
+            'message': 'Student deactivated successfully',
+            'deleted_student': serialize_doc(estudiante)
         }), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 # Manejo de errores
 @app.errorhandler(404)
@@ -230,21 +270,56 @@ def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
 
-@app.route('/student/grades')
-def student_grades():
-    # Mock: calificaciones recientes y promedio
-    grades = [
-        {'subject': 'Matemáticas', 'date': '2024-11-15', 'grade': 4.2},
-        {'subject': 'Español', 'date': '2024-11-14', 'grade': 4.8},
-        {'subject': 'Ciencias', 'date': '2024-11-13', 'grade': 3.9},
-        {'subject': 'Inglés', 'date': '2024-11-12', 'grade': 4.5}
-    ]
-    average = round(sum(g['grade'] for g in grades) / len(grades), 2)
-    return jsonify({'recent': grades, 'average': average}), 200
+@app.route('/student/grades/<student_id>')
+def student_grades(student_id):
+    """Obtener calificaciones de un estudiante"""
+    try:
+        matriculas = get_matriculas_collection()
+        obj_id = string_to_objectid(student_id)
+        
+        if not obj_id:
+            return jsonify({'error': 'Invalid student ID'}), 400
+        
+        # Buscar matrículas activas del estudiante
+        matriculas_estudiante = list(matriculas.find({
+            'id_estudiante': obj_id,
+            'estado': 'activo'
+        }))
+        
+        # Extraer calificaciones
+        todas_calificaciones = []
+        for matricula in matriculas_estudiante:
+            curso_info = matricula.get('curso_info', {})
+            calificaciones = matricula.get('calificaciones', [])
+            
+            for calif in calificaciones:
+                todas_calificaciones.append({
+                    'subject': curso_info.get('nombre_curso', 'N/A'),
+                    'tipo': calif.get('tipo', ''),
+                    'grade': calif.get('nota', 0),
+                    'nota_maxima': calif.get('nota_maxima', 5),
+                    'date': calif.get('fecha_eval', '').isoformat() if calif.get('fecha_eval') else ''
+                })
+        
+        # Calcular promedio
+        if todas_calificaciones:
+            total_notas = sum(c['grade'] for c in todas_calificaciones)
+            average = round(total_notas / len(todas_calificaciones), 2)
+        else:
+            average = 0
+        
+        return jsonify({
+            'recent': todas_calificaciones[:10],  # Últimas 10
+            'average': average
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/student/notifications')
 def student_notifications():
+    """Obtener notificaciones del estudiante (mock por ahora)"""
     notes = [
         {'id': 'n1', 'title': 'Boletín del 3er periodo disponible', 'type': 'info'},
         {'id': 'n2', 'title': 'Entrega de proyecto de Ciencias mañana', 'type': 'warning'},
@@ -255,6 +330,7 @@ def student_notifications():
 
 @app.route('/student/schedule-today')
 def student_schedule_today():
+    """Obtener horario del día (mock por ahora)"""
     schedule = [
         {'time': '7:00 - 7:45', 'subject': 'Matemáticas', 'location': 'A101', 'teacher': 'Prof. García'},
         {'time': '7:45 - 8:30', 'subject': 'Español', 'location': 'A102', 'teacher': 'Prof. López'},

@@ -1,7 +1,18 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime
-import uuid
+import sys
+import os
+
+# Agregar el path del backend para importar db_config
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from database.db_config import (
+    get_usuarios_collection,
+    get_cursos_collection,
+    serialize_doc,
+    string_to_objectid,
+    registrar_auditoria
+)
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -12,102 +23,55 @@ CORS(app, resources={
     }
 })
 
-# Base de datos en memoria para profesores
-teachers_db = [
-    {
-        'id': '1',
-        'name': 'Dr. María López',
-        'email': 'maria.lopez@colegio.edu',
-        'phone': '555-1001',
-        'subject': 'Matemáticas',
-        'qualification': 'Doctorado en Matemáticas',
-        'experience_years': 12,
-        'hire_date': '2018-02-15',
-        'status': 'active',
-        'salary': 4500000,
-        'address': 'Calle Principal #123',
-        'department': 'Ciencias Exactas',
-        'created_at': '2024-01-10T08:00:00Z',
-        'updated_at': '2024-01-10T08:00:00Z'
-    },
-    {
-        'id': '2',
-        'name': 'Lic. Carlos Rodríguez',
-        'email': 'carlos.rodriguez@colegio.edu',
-        'phone': '555-1002',
-        'subject': 'Ciencias Naturales',
-        'qualification': 'Licenciatura en Biología',
-        'experience_years': 8,
-        'hire_date': '2020-08-20',
-        'status': 'active',
-        'salary': 3800000,
-        'address': 'Avenida Central #456',
-        'department': 'Ciencias Naturales',
-        'created_at': '2024-01-11T09:30:00Z',
-        'updated_at': '2024-01-11T09:30:00Z'
-    },
-    {
-        'id': '3',
-        'name': 'Prof. Ana Martín',
-        'email': 'ana.martin@colegio.edu',
-        'phone': '555-1003',
-        'subject': 'Literatura',
-        'qualification': 'Maestría en Literatura Hispanoamericana',
-        'experience_years': 15,
-        'hire_date': '2015-03-10',
-        'status': 'active',
-        'salary': 4200000,
-        'address': 'Calle Literaria #789',
-        'department': 'Humanidades',
-        'created_at': '2024-01-12T11:15:00Z',
-        'updated_at': '2024-01-12T11:15:00Z'
-    }
-]
 
 @app.route('/')
 def home():
     return jsonify({
         'service': 'Teachers Service',
-        'version': '1.0.0',
+        'version': '2.0.0',
+        'database': 'MongoDB',
         'endpoints': {
             'get_all': 'GET /teachers',
             'get_one': 'GET /teachers/{id}',
             'create': 'POST /teachers',
             'update': 'PUT /teachers/{id}',
             'delete': 'DELETE /teachers/{id}',
-            'by_subject': 'GET /teachers?subject={subject}',
-            'by_department': 'GET /teachers?department={department}'
+            'by_subject': 'GET /teachers?subject={subject}'
         }
     })
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy', 'service': 'teachers'})
+    return jsonify({'status': 'healthy', 'service': 'teachers', 'database': 'MongoDB'})
 
 @app.route('/teachers', methods=['GET'])
 def get_teachers():
     """Obtener todos los profesores"""
     try:
+        usuarios = get_usuarios_collection()
+        
         # Filtros opcionales
-        subject = request.args.get('subject')
-        department = request.args.get('department')
-        status = request.args.get('status', 'active')
+        especialidad = request.args.get('especialidad') or request.args.get('subject')
+        status = request.args.get('status')
         
-        filtered_teachers = teachers_db
-        
-        if subject:
-            filtered_teachers = [t for t in filtered_teachers if t.get('subject', '').lower() == subject.lower()]
-        
-        if department:
-            filtered_teachers = [t for t in filtered_teachers if t.get('department', '').lower() == department.lower()]
+        # Construir query
+        query = {'rol': 'docente'}
         
         if status:
-            filtered_teachers = [t for t in filtered_teachers if t.get('status') == status]
+            query['activo'] = (status == 'active')
+        
+        if especialidad:
+            query['especialidad'] = {'$regex': especialidad, '$options': 'i'}
+        
+        # Buscar docentes
+        docentes = list(usuarios.find(query))
+        
+        # Serializar documentos
+        docentes_serializados = serialize_doc(docentes)
         
         return jsonify({
-            'teachers': filtered_teachers,
-            'count': len(filtered_teachers),
-            'total': len(teachers_db)
+            'teachers': docentes_serializados,
+            'count': len(docentes_serializados)
         }), 200
         
     except Exception as e:
@@ -117,12 +81,20 @@ def get_teachers():
 def get_teacher(teacher_id):
     """Obtener un profesor por ID"""
     try:
-        teacher = next((t for t in teachers_db if t['id'] == teacher_id), None)
+        usuarios = get_usuarios_collection()
         
-        if not teacher:
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(teacher_id)
+        if not obj_id:
+            return jsonify({'error': 'Invalid teacher ID'}), 400
+        
+        # Buscar docente
+        docente = usuarios.find_one({'_id': obj_id, 'rol': 'docente'})
+        
+        if not docente:
             return jsonify({'error': 'Teacher not found'}), 404
         
-        return jsonify({'teacher': teacher}), 200
+        return jsonify({'teacher': serialize_doc(docente)}), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -137,41 +109,48 @@ def create_teacher():
             return jsonify({'error': 'No data provided'}), 400
         
         # Validar campos requeridos
-        required_fields = ['name', 'email', 'phone', 'subject']
+        required_fields = ['correo', 'nombres', 'apellidos']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
-        # Verificar si el email ya existe
-        if any(t['email'] == data['email'] for t in teachers_db):
+        usuarios = get_usuarios_collection()
+        
+        # Verificar si el correo ya existe
+        if usuarios.find_one({'correo': data['correo']}):
             return jsonify({'error': 'Email already exists'}), 400
         
-        # Crear profesor
-        new_id = str(len(teachers_db) + 1)
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-        
-        teacher = {
-            'id': new_id,
-            'name': data['name'],
-            'email': data['email'],
-            'phone': data['phone'],
-            'subject': data['subject'],
-            'qualification': data.get('qualification', ''),
-            'experience_years': data.get('experience_years', 0),
-            'hire_date': data.get('hire_date', timestamp.split('T')[0]),
-            'status': data.get('status', 'active'),
-            'salary': data.get('salary', 0),
-            'address': data.get('address', ''),
-            'department': data.get('department', ''),
-            'created_at': timestamp,
-            'updated_at': timestamp
+        # Crear documento de docente
+        docente = {
+            'correo': data['correo'],
+            'rol': 'docente',
+            'nombres': data['nombres'],
+            'apellidos': data['apellidos'],
+            'codigo_empleado': data.get('codigo_empleado', ''),
+            'telefono': data.get('telefono', ''),
+            'especialidad': data.get('especialidad', ''),
+            'fecha_ingreso': datetime.fromisoformat(data['fecha_ingreso']) if data.get('fecha_ingreso') else datetime.utcnow(),
+            'activo': data.get('activo', True),
+            'creado_en': datetime.utcnow()
         }
         
-        teachers_db.append(teacher)
+        # Insertar en MongoDB
+        result = usuarios.insert_one(docente)
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='crear_docente',
+            entidad_afectada='usuarios',
+            id_entidad=str(result.inserted_id),
+            detalles=f"Docente creado: {data['nombres']} {data['apellidos']}"
+        )
+        
+        docente['_id'] = result.inserted_id
         
         return jsonify({
             'message': 'Teacher created successfully',
-            'teacher': teacher
+            'teacher': serialize_doc(docente)
         }), 201
         
     except Exception as e:
@@ -186,30 +165,58 @@ def update_teacher(teacher_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        # Buscar profesor
-        teacher_index = next((i for i, t in enumerate(teachers_db) if t['id'] == teacher_id), None)
+        usuarios = get_usuarios_collection()
         
-        if teacher_index is None:
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(teacher_id)
+        if not obj_id:
+            return jsonify({'error': 'Invalid teacher ID'}), 400
+        
+        # Verificar que el docente existe
+        docente = usuarios.find_one({'_id': obj_id, 'rol': 'docente'})
+        if not docente:
             return jsonify({'error': 'Teacher not found'}), 404
         
         # Verificar email único (si se está actualizando)
-        if 'email' in data:
-            existing_email = any(t['email'] == data['email'] and t['id'] != teacher_id for t in teachers_db)
-            if existing_email:
+        if 'correo' in data and data['correo'] != docente.get('correo'):
+            if usuarios.find_one({'correo': data['correo']}):
                 return jsonify({'error': 'Email already exists'}), 400
         
-        # Actualizar campos
-        updatable_fields = ['name', 'email', 'phone', 'subject', 'qualification', 'experience_years', 'hire_date', 'status', 'salary', 'address', 'department']
+        # Preparar actualización
+        update_data = {}
+        updatable_fields = ['nombres', 'apellidos', 'correo', 'telefono', 'codigo_empleado',
+                          'especialidad', 'activo']
         
         for field in updatable_fields:
             if field in data:
-                teachers_db[teacher_index][field] = data[field]
+                update_data[field] = data[field]
         
-        teachers_db[teacher_index]['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        # Manejar fecha de ingreso
+        if 'fecha_ingreso' in data and data['fecha_ingreso']:
+            update_data['fecha_ingreso'] = datetime.fromisoformat(data['fecha_ingreso'])
+        
+        # Actualizar en MongoDB
+        result = usuarios.update_one(
+            {'_id': obj_id},
+            {'$set': update_data}
+        )
+        
+        if result.modified_count > 0:
+            # Registrar auditoría
+            registrar_auditoria(
+                id_usuario=None,
+                accion='actualizar_docente',
+                entidad_afectada='usuarios',
+                id_entidad=teacher_id,
+                detalles=f"Docente actualizado: {update_data.get('nombres', '')} {update_data.get('apellidos', '')}"
+            )
+        
+        # Obtener docente actualizado
+        docente_actualizado = usuarios.find_one({'_id': obj_id})
         
         return jsonify({
             'message': 'Teacher updated successfully',
-            'teacher': teachers_db[teacher_index]
+            'teacher': serialize_doc(docente_actualizado)
         }), 200
         
     except Exception as e:
@@ -217,18 +224,38 @@ def update_teacher(teacher_id):
 
 @app.route('/teachers/<teacher_id>', methods=['DELETE'])
 def delete_teacher(teacher_id):
-    """Eliminar un profesor"""
+    """Eliminar (desactivar) un profesor"""
     try:
-        teacher_index = next((i for i, t in enumerate(teachers_db) if t['id'] == teacher_id), None)
+        usuarios = get_usuarios_collection()
         
-        if teacher_index is None:
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(teacher_id)
+        if not obj_id:
+            return jsonify({'error': 'Invalid teacher ID'}), 400
+        
+        # Buscar docente
+        docente = usuarios.find_one({'_id': obj_id, 'rol': 'docente'})
+        if not docente:
             return jsonify({'error': 'Teacher not found'}), 404
         
-        deleted_teacher = teachers_db.pop(teacher_index)
+        # Desactivar en lugar de eliminar
+        result = usuarios.update_one(
+            {'_id': obj_id},
+            {'$set': {'activo': False}}
+        )
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='desactivar_docente',
+            entidad_afectada='usuarios',
+            id_entidad=teacher_id,
+            detalles=f"Docente desactivado: {docente.get('nombres')} {docente.get('apellidos')}"
+        )
         
         return jsonify({
-            'message': 'Teacher deleted successfully',
-            'deleted_teacher': deleted_teacher
+            'message': 'Teacher deactivated successfully',
+            'deleted_teacher': serialize_doc(docente)
         }), 200
         
     except Exception as e:
@@ -236,29 +263,17 @@ def delete_teacher(teacher_id):
 
 @app.route('/subjects', methods=['GET'])
 def get_subjects():
-    """Obtener lista de materias disponibles"""
+    """Obtener lista de especialidades disponibles"""
     try:
-        subjects = list(set(t.get('subject', '') for t in teachers_db if t.get('subject')))
-        subjects.sort()
+        usuarios = get_usuarios_collection()
+        
+        # Obtener especialidades únicas
+        especialidades = usuarios.distinct('especialidad', {'rol': 'docente', 'especialidad': {'$ne': None, '$ne': ''}})
+        especialidades = sorted([e for e in especialidades if e])
         
         return jsonify({
-            'subjects': subjects,
-            'count': len(subjects)
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/departments', methods=['GET'])
-def get_departments():
-    """Obtener lista de departamentos disponibles"""
-    try:
-        departments = list(set(t.get('department', '') for t in teachers_db if t.get('department')))
-        departments.sort()
-        
-        return jsonify({
-            'departments': departments,
-            'count': len(departments)
+            'subjects': especialidades,
+            'count': len(especialidades)
         }), 200
         
     except Exception as e:
@@ -274,19 +289,38 @@ def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
 
-@app.route('/teacher/groups')
-def teacher_groups():
-    # Mock: grupos asignados y progreso
-    groups = [
-        {'id': 'g1', 'name': "10°A - Matemáticas", 'students': 28, 'progress_pct': 75},
-        {'id': 'g2', 'name': "11°B - Física", 'students': 25, 'progress_pct': 60},
-        {'id': 'g3', 'name': "9°C - Matemáticas", 'students': 30, 'progress_pct': 80}
-    ]
-    return jsonify({'groups': groups}), 200
+@app.route('/teacher/groups/<teacher_id>')
+def teacher_groups(teacher_id):
+    """Obtener grupos asignados a un docente"""
+    try:
+        cursos = get_cursos_collection()
+        obj_id = string_to_objectid(teacher_id)
+        
+        if not obj_id:
+            return jsonify({'error': 'Invalid teacher ID'}), 400
+        
+        # Buscar cursos del docente
+        cursos_docente = list(cursos.find({'id_docente': obj_id, 'activo': True}))
+        
+        grupos = []
+        for curso in cursos_docente:
+            grupos.append({
+                'id': str(curso['_id']),
+                'name': curso.get('nombre_curso', ''),
+                'code': curso.get('codigo_curso', ''),
+                'grade': curso.get('grado', ''),
+                'periodo': curso.get('periodo', '')
+            })
+        
+        return jsonify({'groups': grupos}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/teacher/pending-grades')
 def teacher_pending_grades():
+    """Calificaciones pendientes (mock por ahora)"""
     pending = [
         {'course': "Matemáticas 10°A", 'pending': 12},
         {'course': "Física 11°B", 'pending': 8},
@@ -297,6 +331,7 @@ def teacher_pending_grades():
 
 @app.route('/teacher/overview')
 def teacher_overview():
+    """Resumen del docente (mock por ahora)"""
     overview = {
         'groups_count': 3,
         'pending_grades': 25,
