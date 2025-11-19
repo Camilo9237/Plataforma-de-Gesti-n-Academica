@@ -1,9 +1,22 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from datetime import datetime
 from keycloak import KeycloakOpenID
 from functools import wraps
+import sys
+import os
+from bson.timestamp import Timestamp
 
+# Agregar el path del backend para importar db_config
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from database.db_config import (
+    get_cursos_collection,
+    get_usuarios_collection,
+    get_matriculas_collection,
+    serialize_doc,
+    string_to_objectid,
+    registrar_auditoria
+)
 
 app = Flask(__name__)
 app.secret_key = "PlataformaColegios"
@@ -53,200 +66,188 @@ def token_required(rol_requerido):
         return decorated
     return decorator
 
-# Base de datos en memoria para grupos
-groups_db = [
-    {
-        'id': '1',
-        'name': '10-A Matemáticas',
-        'grade_level': '10',
-        'subject': 'Matemáticas',
-        'teacher_id': '1',
-        'teacher_name': 'Dr. María López',
-        'students_count': 28,
-        'max_students': 30,
-        'schedule': {
-            'days': ['Lunes', 'Miércoles', 'Viernes'],
-            'time': '08:00 AM - 09:30 AM'
-        },
-        'classroom': 'Aula 101',
-        'academic_year': '2024',
-        'semester': '1',
-        'status': 'active',
-        'description': 'Matemáticas avanzadas para décimo grado',
-        'student_ids': ['1', '2'],  # IDs de estudiantes inscritos
-        'created_at': '2024-01-20T09:00:00Z',
-        'updated_at': '2024-01-20T09:00:00Z'
-    },
-    {
-        'id': '2',
-        'name': '9-B Ciencias Naturales',
-        'grade_level': '9',
-        'subject': 'Ciencias Naturales',
-        'teacher_id': '2',
-        'teacher_name': 'Lic. Carlos Rodríguez',
-        'students_count': 25,
-        'max_students': 28,
-        'schedule': {
-            'days': ['Martes', 'Jueves'],
-            'time': '10:00 AM - 11:30 AM'
-        },
-        'classroom': 'Laboratorio 1',
-        'academic_year': '2024',
-        'semester': '1',
-        'status': 'active',
-        'description': 'Biología y química básica para noveno grado',
-        'student_ids': ['3'],
-        'created_at': '2024-01-21T10:00:00Z',
-        'updated_at': '2024-01-21T10:00:00Z'
-    },
-    {
-        'id': '3',
-        'name': '11-A Literatura',
-        'grade_level': '11',
-        'subject': 'Literatura',
-        'teacher_id': '3',
-        'teacher_name': 'Prof. Ana Martín',
-        'students_count': 22,
-        'max_students': 25,
-        'schedule': {
-            'days': ['Lunes', 'Miércoles', 'Viernes'],
-            'time': '02:00 PM - 03:30 PM'
-        },
-        'classroom': 'Aula 203',
-        'academic_year': '2024',
-        'semester': '1',
-        'status': 'active',
-        'description': 'Literatura hispanoamericana y análisis de textos',
-        'student_ids': [],
-        'created_at': '2024-01-22T14:30:00Z',
-        'updated_at': '2024-01-22T14:30:00Z'
-    }
-]
-
 @app.route('/')
 def home():
     return jsonify({
         'service': 'Groups Service',
-        'version': '1.0.0',
+        'version': '2.0.0',
+        'database': 'MongoDB',
         'endpoints': {
             'get_all': 'GET /groups',
             'get_one': 'GET /groups/{id}',
             'create': 'POST /groups',
             'update': 'PUT /groups/{id}',
             'delete': 'DELETE /groups/{id}',
-            'add_student': 'POST /groups/{id}/students/{student_id}',
-            'remove_student': 'DELETE /groups/{id}/students/{student_id}',
-            'get_students': 'GET /groups/{id}/students'
+            'students': 'GET /groups/{id}/students',
+            'add_student': 'POST /groups/{id}/students',
+            'remove_student': 'DELETE /groups/{id}/students/{student_id}'
         }
     })
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy', 'service': 'groups'})
+    return jsonify({'status': 'healthy', 'service': 'groups', 'database': 'MongoDB'})
 
 @app.route('/groups', methods=['GET'])
 def get_groups():
-    """Obtener todos los grupos"""
+    """Obtener todos los grupos/cursos"""
     try:
+        cursos = get_cursos_collection()
+        
         # Filtros opcionales
-        grade_level = request.args.get('grade_level')
+        grado = request.args.get('grado') or request.args.get('grade_level')
+        periodo = request.args.get('periodo')
         subject = request.args.get('subject')
         teacher_id = request.args.get('teacher_id')
-        academic_year = request.args.get('academic_year')
-        status = request.args.get('status', 'active')
+        status = request.args.get('status')
         
-        filtered_groups = groups_db
+        # Construir query
+        query = {}
         
-        if grade_level:
-            filtered_groups = [g for g in filtered_groups if g.get('grade_level') == grade_level]
-        
+        if grado:
+            query['grado'] = grado
+        if periodo:
+            query['periodo'] = periodo
         if subject:
-            filtered_groups = [g for g in filtered_groups if g.get('subject', '').lower() == subject.lower()]
-        
+            query['especialidad'] = {'$regex': subject, '$options': 'i'}
         if teacher_id:
-            filtered_groups = [g for g in filtered_groups if g.get('teacher_id') == teacher_id]
-        
-        if academic_year:
-            filtered_groups = [g for g in filtered_groups if g.get('academic_year') == academic_year]
-        
+            obj_id = string_to_objectid(teacher_id)
+            if obj_id:
+                query['id_docente'] = obj_id
         if status:
-            filtered_groups = [g for g in filtered_groups if g.get('status') == status]
+            query['activo'] = (status.lower() == 'active')
+        
+        # Buscar cursos
+        grupos = list(cursos.find(query))
+        
+        # Serializar documentos
+        grupos_serializados = serialize_doc(grupos)
         
         return jsonify({
-            'groups': filtered_groups,
-            'count': len(filtered_groups),
-            'total': len(groups_db)
+            'success': True,
+            'groups': grupos_serializados,
+            'count': len(grupos_serializados)
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/groups/<group_id>', methods=['GET'])
 def get_group(group_id):
-    """Obtener un grupo por ID"""
+    """Obtener un grupo específico"""
     try:
-        group = next((g for g in groups_db if g['id'] == group_id), None)
+        cursos = get_cursos_collection()
         
-        if not group:
-            return jsonify({'error': 'Group not found'}), 404
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(group_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
         
-        return jsonify({'group': group}), 200
+        # Buscar curso
+        grupo = cursos.find_one({'_id': obj_id})
+        
+        if not grupo:
+            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
+        
+        return jsonify({
+            'success': True,
+            'group': serialize_doc(grupo)
+        }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/groups', methods=['POST'])
 def create_group():
-    """Crear un nuevo grupo"""
+    """Crear un nuevo grupo/curso"""
     try:
         data = request.get_json()
         
         if not data:
-            return jsonify({'error': 'No data provided'}), 400
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
         
         # Validar campos requeridos
-        required_fields = ['name', 'grade_level', 'subject', 'teacher_id', 'teacher_name']
+        required_fields = ['nombre_curso', 'codigo_curso', 'periodo']
         for field in required_fields:
-            if not data.get(field):
-                return jsonify({'error': f'Missing required field: {field}'}), 400
+            if field not in data or not data[field]:
+                # Soporte para nombres alternativos
+                if field == 'nombre_curso' and 'name' in data:
+                    data['nombre_curso'] = data['name']
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': f'El campo {field} es requerido'
+                    }), 400
+
+        cursos = get_cursos_collection()
         
-        # Verificar si el nombre ya existe
-        if any(g['name'] == data['name'] for g in groups_db):
-            return jsonify({'error': 'Group name already exists'}), 400
+        # Verificar si el código de curso ya existe
+        if cursos.find_one({'codigo_curso': data['codigo_curso']}):
+            return jsonify({
+                'success': False,
+                'error': 'El código de curso ya está registrado'
+            }), 400
         
-        # Crear grupo
-        new_id = str(len(groups_db) + 1)
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-        
-        group = {
-            'id': new_id,
-            'name': data['name'],
-            'grade_level': data['grade_level'],
-            'subject': data['subject'],
-            'teacher_id': data['teacher_id'],
-            'teacher_name': data['teacher_name'],
-            'students_count': 0,
-            'max_students': data.get('max_students', 30),
-            'schedule': data.get('schedule', {}),
-            'classroom': data.get('classroom', ''),
-            'academic_year': data.get('academic_year', '2024'),
-            'semester': data.get('semester', '1'),
-            'status': data.get('status', 'active'),
-            'description': data.get('description', ''),
-            'student_ids': [],
-            'created_at': timestamp,
-            'updated_at': timestamp
+        # Crear documento del curso
+        nuevo_curso = {
+            'nombre_curso': data['nombre_curso'],
+            'codigo_curso': data['codigo_curso'],
+            'periodo': data['periodo'],
+            'activo': data.get('activo', True) if 'activo' in data else (data.get('status') == 'active')
         }
         
-        groups_db.append(group)
+        # Campos opcionales
+        if 'grado' in data:
+            nuevo_curso['grado'] = data['grado']
+        elif 'grade_level' in data:
+            nuevo_curso['grado'] = data['grade_level']
+            
+        if 'capacidad_max' in data:
+            nuevo_curso['capacidad_max'] = int(data['capacidad_max'])
+        elif 'max_students' in data:
+            nuevo_curso['capacidad_max'] = int(data['max_students'])
+        
+        # Si se proporciona un docente
+        teacher_id = data.get('id_docente') or data.get('teacher_id')
+        if teacher_id:
+            docente_id = string_to_objectid(teacher_id)
+            if docente_id:
+                nuevo_curso['id_docente'] = docente_id
+                
+                # Obtener datos del docente para denormalizar
+                usuarios = get_usuarios_collection()
+                docente = usuarios.find_one({'_id': docente_id, 'rol': 'docente'})
+                
+                if docente:
+                    nuevo_curso['docente_info'] = {
+                        'nombres': docente.get('nombres'),
+                        'apellidos': docente.get('apellidos'),
+                        'especialidad': docente.get('especialidad')
+                    }
+        
+        # Insertar en la base de datos
+        resultado = cursos.insert_one(nuevo_curso)
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='crear_curso',
+            entidad_afectada='cursos',
+            id_entidad=str(resultado.inserted_id),
+            detalles=f"Curso creado: {data['nombre_curso']}"
+        )
+        
+        # Obtener el documento insertado
+        curso_creado = cursos.find_one({'_id': resultado.inserted_id})
         
         return jsonify({
-            'message': 'Group created successfully',
-            'group': group
+            'success': True,
+            'message': 'Grupo creado exitosamente',
+            'group': serialize_doc(curso_creado)
         }), 201
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/groups/<group_id>', methods=['PUT'])
 def update_group(group_id):
@@ -255,151 +256,297 @@ def update_group(group_id):
         data = request.get_json()
         
         if not data:
-            return jsonify({'error': 'No data provided'}), 400
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
         
-        # Buscar grupo
-        group_index = next((i for i, g in enumerate(groups_db) if g['id'] == group_id), None)
+        cursos = get_cursos_collection()
         
-        if group_index is None:
-            return jsonify({'error': 'Group not found'}), 404
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(group_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
         
-        # Verificar nombre único (si se está actualizando)
-        if 'name' in data:
-            existing_name = any(g['name'] == data['name'] and g['id'] != group_id for g in groups_db)
-            if existing_name:
-                return jsonify({'error': 'Group name already exists'}), 400
+        # Verificar que el grupo existe
+        grupo_existente = cursos.find_one({'_id': obj_id})
+        if not grupo_existente:
+            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
         
-        # Actualizar campos
-        updatable_fields = ['name', 'grade_level', 'subject', 'teacher_id', 'teacher_name', 'max_students', 'schedule', 'classroom', 'academic_year', 'semester', 'status', 'description']
+        # Preparar datos para actualizar
+        campos_no_modificables = {'_id', 'codigo_curso'}
+        datos_actualizacion = {}
         
-        for field in updatable_fields:
-            if field in data:
-                groups_db[group_index][field] = data[field]
+        # Mapear nombres de campos alternativos
+        field_mapping = {
+            'name': 'nombre_curso',
+            'grade_level': 'grado',
+            'max_students': 'capacidad_max',
+            'status': 'activo'
+        }
         
-        groups_db[group_index]['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        for key, value in data.items():
+            if key in campos_no_modificables:
+                continue
+            mapped_key = field_mapping.get(key, key)
+            
+            # Convertir status a activo
+            if key == 'status':
+                datos_actualizacion['activo'] = (value == 'active')
+            else:
+                datos_actualizacion[mapped_key] = value
+        
+        # Si se actualiza el docente
+        teacher_id = data.get('id_docente') or data.get('teacher_id')
+        if teacher_id:
+            docente_id = string_to_objectid(teacher_id)
+            if docente_id:
+                datos_actualizacion['id_docente'] = docente_id
+                
+                # Actualizar datos denormalizados del docente
+                usuarios = get_usuarios_collection()
+                docente = usuarios.find_one({'_id': docente_id, 'rol': 'docente'})
+                
+                if docente:
+                    datos_actualizacion['docente_info'] = {
+                        'nombres': docente.get('nombres'),
+                        'apellidos': docente.get('apellidos'),
+                        'especialidad': docente.get('especialidad')
+                    }
+        
+        # Actualizar
+        if datos_actualizacion:
+            resultado = cursos.update_one(
+                {'_id': obj_id},
+                {'$set': datos_actualizacion}
+            )
+            
+            if resultado.modified_count > 0:
+                # Registrar en auditoría
+                registrar_auditoria(
+                    id_usuario=None,
+                    accion='actualizar_curso',
+                    entidad_afectada='cursos',
+                    id_entidad=group_id,
+                    detalles=f"Campos actualizados: {', '.join(datos_actualizacion.keys())}"
+                )
+        
+        # Obtener documento actualizado
+        grupo_actualizado = cursos.find_one({'_id': obj_id})
         
         return jsonify({
-            'message': 'Group updated successfully',
-            'group': groups_db[group_index]
+            'success': True,
+            'message': 'Grupo actualizado exitosamente',
+            'group': serialize_doc(grupo_actualizado)
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/groups/<group_id>', methods=['DELETE'])
 def delete_group(group_id):
-    """Eliminar un grupo"""
+    """Eliminar (desactivar) un grupo"""
     try:
-        group_index = next((i for i, g in enumerate(groups_db) if g['id'] == group_id), None)
+        cursos = get_cursos_collection()
         
-        if group_index is None:
-            return jsonify({'error': 'Group not found'}), 404
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(group_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
         
-        deleted_group = groups_db.pop(group_index)
+        # Verificar que el grupo existe
+        grupo = cursos.find_one({'_id': obj_id})
+        if not grupo:
+            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
+        
+        # Desactivar
+        resultado = cursos.update_one(
+            {'_id': obj_id},
+            {'$set': {'activo': False}}
+        )
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='desactivar_curso',
+            entidad_afectada='cursos',
+            id_entidad=group_id,
+            detalles=f"Curso desactivado: {grupo['nombre_curso']}"
+        )
         
         return jsonify({
-            'message': 'Group deleted successfully',
-            'deleted_group': deleted_group
+            'success': True,
+            'message': 'Grupo desactivado exitosamente'
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/groups/<group_id>/students', methods=['GET'])
 def get_group_students(group_id):
     """Obtener estudiantes de un grupo"""
     try:
-        group = next((g for g in groups_db if g['id'] == group_id), None)
+        matriculas = get_matriculas_collection()
         
-        if not group:
-            return jsonify({'error': 'Group not found'}), 404
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(group_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
+        
+        # Buscar matrículas del curso
+        estudiantes_matriculas = list(matriculas.find({
+            'id_curso': obj_id,
+            'estado': 'activo'
+        }))
         
         return jsonify({
+            'success': True,
             'group_id': group_id,
-            'group_name': group['name'],
-            'student_ids': group.get('student_ids', []),
-            'students_count': group.get('students_count', 0),
-            'max_students': group.get('max_students', 30)
+            'student_ids': [str(m['id_estudiante']) for m in estudiantes_matriculas],
+            'students': serialize_doc(estudiantes_matriculas),
+            'students_count': len(estudiantes_matriculas)
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/groups/<group_id>/students/<student_id>', methods=['POST'])
 def add_student_to_group(group_id, student_id):
-    """Agregar estudiante a un grupo"""
+    """Agregar un estudiante a un grupo (crear matrícula)"""
     try:
-        group_index = next((i for i, g in enumerate(groups_db) if g['id'] == group_id), None)
+        cursos = get_cursos_collection()
+        usuarios = get_usuarios_collection()
+        matriculas = get_matriculas_collection()
         
-        if group_index is None:
-            return jsonify({'error': 'Group not found'}), 404
+        # Convertir IDs a ObjectId
+        curso_id = string_to_objectid(group_id)
+        estudiante_id = string_to_objectid(student_id)
         
-        group = groups_db[group_index]
+        if not curso_id or not estudiante_id:
+            return jsonify({'success': False, 'error': 'IDs inválidos'}), 400
         
-        # Verificar si el grupo no está lleno
-        if group['students_count'] >= group.get('max_students', 30):
-            return jsonify({'error': 'Group is full'}), 400
+        # Verificar que el curso existe
+        curso = cursos.find_one({'_id': curso_id, 'activo': True})
+        if not curso:
+            return jsonify({'success': False, 'error': 'Curso no encontrado o inactivo'}), 404
         
-        # Verificar si el estudiante ya está en el grupo
-        if student_id in group.get('student_ids', []):
-            return jsonify({'error': 'Student already in group'}), 400
+        # Verificar capacidad
+        if 'capacidad_max' in curso:
+            estudiantes_actuales = matriculas.count_documents({
+                'id_curso': curso_id,
+                'estado': 'activo'
+            })
+            if estudiantes_actuales >= curso['capacidad_max']:
+                return jsonify({'success': False, 'error': 'El grupo está lleno'}), 400
         
-        # Agregar estudiante
-        if 'student_ids' not in group:
-            group['student_ids'] = []
+        # Verificar que el estudiante existe
+        estudiante = usuarios.find_one({'_id': estudiante_id, 'rol': 'estudiante', 'activo': True})
+        if not estudiante:
+            return jsonify({'success': False, 'error': 'Estudiante no encontrado o inactivo'}), 404
         
-        group['student_ids'].append(student_id)
-        group['students_count'] = len(group['student_ids'])
-        group['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        # Verificar si ya está matriculado
+        matricula_existente = matriculas.find_one({
+            'id_estudiante': estudiante_id,
+            'id_curso': curso_id
+        })
+        
+        if matricula_existente:
+            return jsonify({'success': False, 'error': 'El estudiante ya está matriculado en este curso'}), 400
+        
+        # Crear matrícula
+        nueva_matricula = {
+            'id_estudiante': estudiante_id,
+            'id_curso': curso_id,
+            'fecha_matricula': Timestamp(int(datetime.utcnow().timestamp()), 0),
+            'estado': 'activo',
+            'calificaciones': [],
+            'estudiante_info': {
+                'nombres': estudiante.get('nombres'),
+                'apellidos': estudiante.get('apellidos'),
+                'codigo_est': estudiante.get('codigo_est')
+            },
+            'curso_info': {
+                'nombre_curso': curso.get('nombre_curso'),
+                'codigo_curso': curso.get('codigo_curso'),
+                'grado': curso.get('grado'),
+                'periodo': curso.get('periodo')
+            }
+        }
+        
+        # Insertar matrícula
+        resultado = matriculas.insert_one(nueva_matricula)
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='crear_matricula',
+            entidad_afectada='matriculas',
+            id_entidad=str(resultado.inserted_id),
+            detalles=f"Estudiante {estudiante['nombres']} matriculado en {curso['nombre_curso']}"
+        )
         
         return jsonify({
-            'message': 'Student added to group successfully',
+            'success': True,
+            'message': 'Estudiante agregado al grupo exitosamente',
             'group_id': group_id,
-            'student_id': student_id,
-            'students_count': group['students_count']
+            'student_id': student_id
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/groups/<group_id>/students/<student_id>', methods=['DELETE'])
 def remove_student_from_group(group_id, student_id):
-    """Remover estudiante de un grupo"""
+    """Remover un estudiante de un grupo"""
     try:
-        group_index = next((i for i, g in enumerate(groups_db) if g['id'] == group_id), None)
+        matriculas = get_matriculas_collection()
         
-        if group_index is None:
-            return jsonify({'error': 'Group not found'}), 404
+        # Convertir IDs a ObjectId
+        curso_id = string_to_objectid(group_id)
+        estudiante_id = string_to_objectid(student_id)
         
-        group = groups_db[group_index]
+        if not curso_id or not estudiante_id:
+            return jsonify({'success': False, 'error': 'IDs inválidos'}), 400
         
-        # Verificar si el estudiante está en el grupo
-        if student_id not in group.get('student_ids', []):
-            return jsonify({'error': 'Student not in group'}), 404
+        # Buscar matrícula
+        matricula = matriculas.find_one({
+            'id_estudiante': estudiante_id,
+            'id_curso': curso_id
+        })
         
-        # Remover estudiante
-        group['student_ids'].remove(student_id)
-        group['students_count'] = len(group['student_ids'])
-        group['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        if not matricula:
+            return jsonify({'success': False, 'error': 'Matrícula no encontrada'}), 404
+        
+        # Cambiar estado a retirado
+        resultado = matriculas.update_one(
+            {'_id': matricula['_id']},
+            {'$set': {'estado': 'retirado'}}
+        )
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='retirar_matricula',
+            entidad_afectada='matriculas',
+            id_entidad=str(matricula['_id']),
+            detalles=f"Estudiante retirado del curso"
+        )
         
         return jsonify({
-            'message': 'Student removed from group successfully',
+            'success': True,
+            'message': 'Estudiante removido del grupo exitosamente',
             'group_id': group_id,
-            'student_id': student_id,
-            'students_count': group['students_count']
+            'student_id': student_id
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Manejo de errores
 @app.errorhandler(404)
 def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
+    return jsonify({'success': False, 'error': 'Endpoint no encontrado'}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
+    return jsonify({'success': False, 'error': 'Error interno del servidor'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5003)

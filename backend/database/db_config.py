@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from bson import ObjectId
 from bson.timestamp import Timestamp
 from datetime import datetime
+import requests
 
 class DatabaseConfig:
     """Configuración centralizada para la conexión a MongoDB"""
@@ -126,18 +127,67 @@ def string_to_objectid(id_string):
         return None
 
 
-def registrar_auditoria(id_usuario, accion, entidad_afectada, id_entidad=None, detalles=None):
-    """Registra una acción en la auditoría"""
+def registrar_auditoria(id_usuario, accion, entidad_afectada, id_entidad=None, detalles=None, ip_address=None):
+    """Registra una acción en el log de auditoría
+    
+    Args:
+        id_usuario: ID del usuario que realiza la acción (puede ser None para acciones del sistema)
+        accion: Tipo de acción realizada (crear, actualizar, eliminar, etc.)
+        entidad_afectada: Nombre de la colección afectada
+        id_entidad: ID del documento afectado (opcional)
+        detalles: Información adicional sobre la acción (opcional)
+        ip_address: Dirección IP del usuario (opcional)
+    """
     try:
+        from bson import ObjectId
+        from bson.timestamp import Timestamp
+        import time
+        
         auditoria = get_auditoria_collection()
-        documento = {
-            'id_usuario': string_to_objectid(id_usuario) if id_usuario else None,
+        
+        # Convertir id_usuario a ObjectId si es necesario
+        if id_usuario is None:
+            # Usar un ObjectId especial para acciones del sistema
+            id_usuario_obj = ObjectId('000000000000000000000000')
+        elif isinstance(id_usuario, str):
+            try:
+                id_usuario_obj = ObjectId(id_usuario)
+            except:
+                id_usuario_obj = ObjectId('000000000000000000000000')
+        else:
+            id_usuario_obj = id_usuario
+        
+        # Convertir id_entidad a ObjectId si es necesario
+        id_entidad_obj = None
+        if id_entidad is not None:
+            if isinstance(id_entidad, str):
+                try:
+                    id_entidad_obj = ObjectId(id_entidad)
+                except:
+                    id_entidad_obj = None
+            elif isinstance(id_entidad, ObjectId):
+                id_entidad_obj = id_entidad
+        
+        # Convertir datetime a Timestamp de MongoDB
+        timestamp_actual = Timestamp(int(time.time()), 1)
+        
+        log = {
+            'id_usuario': id_usuario_obj,
             'accion': accion,
             'entidad_afectada': entidad_afectada,
-            'id_entidad': string_to_objectid(id_entidad) if id_entidad else None,
-            'detalles': detalles,
-            'fecha': datetime.utcnow()
+            'fecha': timestamp_actual,
+            'detalles': detalles or {}
         }
-        auditoria.insert_one(documento)
+        
+        # Solo agregar id_entidad si no es None
+        if id_entidad_obj is not None:
+            log['id_entidad'] = id_entidad_obj
+        
+        # Solo agregar IP si está disponible
+        if ip_address is not None:
+            log['ip'] = ip_address
+        
+        auditoria.insert_one(log)
+        
     except Exception as e:
         print(f"Error al registrar auditoría: {e}")
