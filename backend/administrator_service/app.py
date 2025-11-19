@@ -1,13 +1,28 @@
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
+import sys
 import os
 from datetime import datetime
 from functools import wraps
+from bson.timestamp import Timestamp
 
 try:
     from keycloak import KeycloakOpenID
 except Exception:
     KeycloakOpenID = None
+
+# Agregar el path del backend para importar db_config
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from database.db_config import (
+    get_usuarios_collection,
+    get_cursos_collection,
+    get_matriculas_collection,
+    get_reportes_collection,
+    get_auditoria_collection,
+    serialize_doc,
+    string_to_objectid,
+    registrar_auditoria
+)
 
 app = Flask(__name__)
 app.secret_key = os.getenv('APP_SECRET', 'plataforma_secret')
@@ -89,12 +104,16 @@ def token_required(rol_requerido):
 
 @app.route('/')
 def home():
-    return jsonify({'service': 'Administrator Service', 'version': '1.0.0'})
+    return jsonify({
+        'service': 'Administrator Service',
+        'version': '2.0.0',
+        'database': 'MongoDB'
+    })
 
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy', 'service': 'administrator'})
+    return jsonify({'status': 'healthy', 'service': 'administrator', 'database': 'MongoDB'})
 
 
 @app.route('/dashboard')
@@ -107,48 +126,434 @@ def dashboard():
 @app.route('/admin/stats')
 @token_required('administrador')
 def admin_stats():
-    # Datos mock para el panel administrativo
-    data = {
-        'total_students': 1247,
-        'enrollment_complete_pct': 92.3,
-        'active_campuses': 3,
-        'active_teachers': 78
-    }
-    return jsonify(data)
+    """Estadísticas del sistema desde MongoDB"""
+    try:
+        usuarios = get_usuarios_collection()
+        cursos = get_cursos_collection()
+        matriculas = get_matriculas_collection()
+        
+        # Contar estudiantes activos
+        total_students = usuarios.count_documents({'rol': 'estudiante', 'activo': True})
+        
+        # Contar docentes activos
+        active_teachers = usuarios.count_documents({'rol': 'docente', 'activo': True})
+        
+        # Contar matrículas activas
+        total_enrollments = matriculas.count_documents({'estado': 'activo'})
+        
+        # Calcular porcentaje de inscripción (ejemplo: sobre 1500 cupos totales)
+        capacidad_total = 1500
+        enrollment_complete_pct = round((total_enrollments / capacidad_total) * 100, 1) if capacidad_total > 0 else 0
+        
+        # Contar sedes activas (mock, ajustar según tu modelo)
+        active_campuses = 3
+        
+        data = {
+            'total_students': total_students,
+            'enrollment_complete_pct': enrollment_complete_pct,
+            'active_campuses': active_campuses,
+            'active_teachers': active_teachers
+        }
+        
+        return jsonify(data), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/admin/pending-tasks')
 @token_required('administrador')
 def admin_pending_tasks():
-    tasks = [
-        {'id': 't1', 'title': 'Revisión de matrículas pendientes', 'count': 15, 'severity': 'urgent'},
-        {'id': 't2', 'title': 'Aprobación de certificados', 'count': 8, 'severity': 'normal'},
-        {'id': 't3', 'title': 'Validación de documentos', 'count': 23, 'severity': 'normal'},
-        {'id': 't4', 'title': 'Asignación de docentes', 'count': 5, 'severity': 'urgent'}
-    ]
-    return jsonify({'tasks': tasks})
+    """Tareas pendientes del administrador"""
+    try:
+        matriculas = get_matriculas_collection()
+        usuarios = get_usuarios_collection()
+        
+        # Contar matrículas pendientes (ejemplo: estado = 'pendiente')
+        pending_enrollments = matriculas.count_documents({'estado': 'pendiente'})
+        
+        # Contar usuarios inactivos que necesitan revisión
+        inactive_users = usuarios.count_documents({'activo': False})
+        
+        tasks = [
+            {
+                'id': 't1',
+                'title': 'Revisión de matrículas pendientes',
+                'count': pending_enrollments,
+                'severity': 'urgent' if pending_enrollments > 10 else 'normal'
+            },
+            {
+                'id': 't2',
+                'title': 'Aprobación de certificados',
+                'count': 8,  # Mock por ahora
+                'severity': 'normal'
+            },
+            {
+                'id': 't3',
+                'title': 'Validación de documentos',
+                'count': inactive_users,
+                'severity': 'normal'
+            },
+            {
+                'id': 't4',
+                'title': 'Asignación de docentes',
+                'count': 5,  # Mock por ahora
+                'severity': 'urgent'
+            }
+        ]
+        
+        return jsonify({'tasks': tasks}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/admin/campuses')
 @token_required('administrador')
 def admin_campuses():
-    campuses = [
-        {'name': 'Sede Principal', 'students': 567, 'occupancy_pct': 89, 'status': 'Activa'},
-        {'name': 'Sede Norte', 'students': 423, 'occupancy_pct': 76, 'status': 'Activa'},
-        {'name': 'Sede Sur', 'students': 257, 'occupancy_pct': 45, 'status': 'Activa'}
-    ]
-    return jsonify({'campuses': campuses})
+    """Información de sedes (mock mejorado con datos reales en futuro)"""
+    try:
+        usuarios = get_usuarios_collection()
+        
+        # Por ahora mock, pero podrías agregar un campo 'sede' en usuarios
+        total_students = usuarios.count_documents({'rol': 'estudiante', 'activo': True})
+        
+        campuses = [
+            {
+                'name': 'Sede Principal',
+                'students': int(total_students * 0.45),
+                'occupancy_pct': 89,
+                'status': 'Activa'
+            },
+            {
+                'name': 'Sede Norte',
+                'students': int(total_students * 0.35),
+                'occupancy_pct': 76,
+                'status': 'Activa'
+            },
+            {
+                'name': 'Sede Sur',
+                'students': int(total_students * 0.20),
+                'occupancy_pct': 45,
+                'status': 'Activa'
+            }
+        ]
+        
+        return jsonify({'campuses': campuses}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/admin/recent-stats')
 @token_required('administrador')
 def admin_recent_stats():
-    recent = [
-        {'month': 'Nov 2024', 'enrollments': 45, 'dropouts': 3, 'avg': 4.1},
-        {'month': 'Oct 2024', 'enrollments': 32, 'dropouts': 7, 'avg': 4.0},
-        {'month': 'Sep 2024', 'enrollments': 52, 'dropouts': 5, 'avg': 4.2}
-    ]
-    return jsonify({'recent': recent})
+    """Estadísticas recientes de matrículas"""
+    try:
+        matriculas = get_matriculas_collection()
+        
+        # Agregación por mes (últimos 3 meses)
+        pipeline = [
+            {
+                '$match': {
+                    'fecha_matricula': {'$exists': True}
+                }
+            },
+            {
+                '$project': {
+                    'year': {'$year': '$fecha_matricula'},
+                    'month': {'$month': '$fecha_matricula'},
+                    'estado': 1
+                }
+            },
+            {
+                '$group': {
+                    '_id': {
+                        'year': '$year',
+                        'month': '$month'
+                    },
+                    'total': {'$sum': 1},
+                    'activas': {
+                        '$sum': {'$cond': [{'$eq': ['$estado', 'activo']}, 1, 0]}
+                    },
+                    'retiradas': {
+                        '$sum': {'$cond': [{'$eq': ['$estado', 'retirado']}, 1, 0]}
+                    }
+                }
+            },
+            {
+                '$sort': {'_id.year': -1, '_id.month': -1}
+            },
+            {
+                '$limit': 3
+            }
+        ]
+        
+        results = list(matriculas.aggregate(pipeline))
+        
+        # Formatear resultados
+        month_names = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+        recent = []
+        
+        for r in results:
+            month_num = r['_id']['month']
+            year = r['_id']['year']
+            recent.append({
+                'month': f"{month_names[month_num-1]} {year}",
+                'enrollments': r.get('activas', 0),
+                'dropouts': r.get('retiradas', 0),
+                'avg': 4.1  # Mock, calcular promedio real si tienes calificaciones
+            })
+        
+        # Si no hay datos, devolver mock
+        if not recent:
+            recent = [
+                {'month': 'Nov 2024', 'enrollments': 45, 'dropouts': 3, 'avg': 4.1},
+                {'month': 'Oct 2024', 'enrollments': 32, 'dropouts': 7, 'avg': 4.0},
+                {'month': 'Sep 2024', 'enrollments': 52, 'dropouts': 5, 'avg': 4.2}
+            ]
+        
+        return jsonify({'recent': recent}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/statistics', methods=['GET'])
+@token_required('administrador')
+def get_statistics():
+    """Obtener estadísticas completas del sistema"""
+    try:
+        usuarios = get_usuarios_collection()
+        cursos = get_cursos_collection()
+        matriculas = get_matriculas_collection()
+        
+        # Contar usuarios por rol
+        total_estudiantes = usuarios.count_documents({'rol': 'estudiante', 'activo': True})
+        total_docentes = usuarios.count_documents({'rol': 'docente', 'activo': True})
+        total_administradores = usuarios.count_documents({'rol': 'administrador', 'activo': True})
+        
+        # Contar cursos activos
+        total_cursos = cursos.count_documents({'activo': True})
+        
+        # Contar matrículas activas
+        total_matriculas = matriculas.count_documents({'estado': 'activo'})
+        
+        # Estadísticas por periodo
+        periodos_stats = []
+        for periodo in ['1', '2', '3', '4']:
+            cursos_periodo = cursos.count_documents({'periodo': periodo, 'activo': True})
+            periodos_stats.append({
+                'periodo': periodo,
+                'cursos': cursos_periodo
+            })
+        
+        return jsonify({
+            'success': True,
+            'statistics': {
+                'usuarios': {
+                    'estudiantes': total_estudiantes,
+                    'docentes': total_docentes,
+                    'administradores': total_administradores,
+                    'total': total_estudiantes + total_docentes + total_administradores
+                },
+                'cursos': {
+                    'total': total_cursos,
+                    'por_periodo': periodos_stats
+                },
+                'matriculas': {
+                    'activas': total_matriculas
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/users', methods=['GET'])
+@token_required('administrador')
+def get_all_users():
+    """Obtener todos los usuarios del sistema"""
+    try:
+        usuarios = get_usuarios_collection()
+        
+        # Filtros opcionales
+        rol = request.args.get('rol')
+        status = request.args.get('status')
+        
+        # Construir query
+        query = {}
+        
+        if rol:
+            query['rol'] = rol
+        if status:
+            query['activo'] = (status.lower() == 'active')
+        
+        # Buscar usuarios
+        users = list(usuarios.find(query))
+        
+        return jsonify({
+            'success': True,
+            'users': serialize_doc(users),
+            'count': len(users)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/audit', methods=['GET'])
+@token_required('administrador')
+def get_audit_logs():
+    """Obtener logs de auditoría"""
+    try:
+        auditoria = get_auditoria_collection()
+        
+        # Filtros opcionales
+        accion = request.args.get('accion')
+        entidad = request.args.get('entidad')
+        limit = int(request.args.get('limit', 100))
+        
+        # Construir query
+        query = {}
+        
+        if accion:
+            query['accion'] = accion
+        if entidad:
+            query['entidad_afectada'] = entidad
+        
+        # Buscar logs ordenados por fecha descendente
+        logs = list(auditoria.find(query).sort('fecha', -1).limit(limit))
+        
+        return jsonify({
+            'success': True,
+            'logs': serialize_doc(logs),
+            'count': len(logs)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/reports', methods=['GET'])
+@token_required('administrador')
+def get_reports():
+    """Obtener reportes generados"""
+    try:
+        reportes = get_reportes_collection()
+        
+        # Filtros opcionales
+        tipo = request.args.get('tipo')
+        limit = int(request.args.get('limit', 50))
+        
+        # Construir query
+        query = {}
+        
+        if tipo:
+            query['tipo_reporte'] = tipo
+        
+        # Buscar reportes ordenados por fecha descendente
+        reports = list(reportes.find(query).sort('fecha_generado', -1).limit(limit))
+        
+        return jsonify({
+            'success': True,
+            'reports': serialize_doc(reports),
+            'count': len(reports)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/users/<user_id>/status', methods=['PUT'])
+@token_required('administrador')
+def update_user_status(user_id):
+    """Activar/Desactivar un usuario"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'activo' not in data:
+            return jsonify({'success': False, 'error': 'Se requiere el campo activo'}), 400
+        
+        usuarios = get_usuarios_collection()
+        
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(user_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
+        
+        # Verificar que el usuario existe
+        usuario = usuarios.find_one({'_id': obj_id})
+        if not usuario:
+            return jsonify({'success': False, 'error': 'Usuario no encontrado'}), 404
+        
+        # Actualizar estado
+        resultado = usuarios.update_one(
+            {'_id': obj_id},
+            {'$set': {'activo': data['activo']}}
+        )
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            id_usuario=g.get('userinfo', {}).get('sub'),
+            accion='cambiar_estado_usuario',
+            entidad_afectada='usuarios',
+            id_entidad=user_id,
+            detalles=f"Estado cambiado a: {'activo' if data['activo'] else 'inactivo'}"
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f"Usuario {'activado' if data['activo'] else 'desactivado'} exitosamente"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/dashboard', methods=['GET'])
+@token_required('administrador')
+def get_dashboard():
+    """Obtener datos para el dashboard administrativo"""
+    try:
+        usuarios = get_usuarios_collection()
+        cursos = get_cursos_collection()
+        matriculas = get_matriculas_collection()
+        
+        # Estadísticas rápidas
+        stats = {
+            'usuarios_activos': usuarios.count_documents({'activo': True}),
+            'cursos_activos': cursos.count_documents({'activo': True}),
+            'matriculas_activas': matriculas.count_documents({'estado': 'activo'}),
+            'estudiantes_totales': usuarios.count_documents({'rol': 'estudiante', 'activo': True}),
+            'docentes_totales': usuarios.count_documents({'rol': 'docente', 'activo': True})
+        }
+        
+        # Cursos más populares (con más estudiantes)
+        pipeline = [
+            {'$match': {'estado': 'activo'}},
+            {'$group': {
+                '_id': '$id_curso',
+                'total_estudiantes': {'$sum': 1},
+                'curso_info': {'$first': '$curso_info'}
+            }},
+            {'$sort': {'total_estudiantes': -1}},
+            {'$limit': 5}
+        ]
+        
+        cursos_populares = list(matriculas.aggregate(pipeline))
+        
+        return jsonify({
+            'success': True,
+            'dashboard': {
+                'statistics': stats,
+                'popular_courses': serialize_doc(cursos_populares)
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 def _extract_roles_from_userinfo(userinfo):
@@ -249,5 +654,16 @@ def dashboard_general():
     return jsonify({'message': mensaje, 'role': role, 'user': user, 'time': datetime.utcnow().isoformat() + 'Z'})
 
 
+# Manejo de errores
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'success': False, 'error': 'Endpoint no encontrado'}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'success': False, 'error': 'Error interno del servidor'}), 500
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5003, debug=True)
+    app.run(host='0.0.0.0', port=5004, debug=True)

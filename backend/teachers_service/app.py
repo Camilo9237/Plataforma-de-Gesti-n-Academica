@@ -1,131 +1,148 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from datetime import datetime
-import uuid
+from keycloak import KeycloakOpenID
+from functools import wraps
+import sys
+import os
+from bson.timestamp import Timestamp
+
+# Agregar el path del backend para importar db_config
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from database.db_config import (
+    get_usuarios_collection,
+    get_cursos_collection,
+    serialize_doc,
+    string_to_objectid,
+    registrar_auditoria
+)
 
 app = Flask(__name__)
-CORS(app, resources={
-    r"/*": {
-        "origins": ["http://localhost:4200", "https://your-frontend-domain.com"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
+app.secret_key = "PlataformaColegios"
+CORS(app)
 
-# Base de datos en memoria para profesores
-teachers_db = [
-    {
-        'id': '1',
-        'name': 'Dr. María López',
-        'email': 'maria.lopez@colegio.edu',
-        'phone': '555-1001',
-        'subject': 'Matemáticas',
-        'qualification': 'Doctorado en Matemáticas',
-        'experience_years': 12,
-        'hire_date': '2018-02-15',
-        'status': 'active',
-        'salary': 4500000,
-        'address': 'Calle Principal #123',
-        'department': 'Ciencias Exactas',
-        'created_at': '2024-01-10T08:00:00Z',
-        'updated_at': '2024-01-10T08:00:00Z'
-    },
-    {
-        'id': '2',
-        'name': 'Lic. Carlos Rodríguez',
-        'email': 'carlos.rodriguez@colegio.edu',
-        'phone': '555-1002',
-        'subject': 'Ciencias Naturales',
-        'qualification': 'Licenciatura en Biología',
-        'experience_years': 8,
-        'hire_date': '2020-08-20',
-        'status': 'active',
-        'salary': 3800000,
-        'address': 'Avenida Central #456',
-        'department': 'Ciencias Naturales',
-        'created_at': '2024-01-11T09:30:00Z',
-        'updated_at': '2024-01-11T09:30:00Z'
-    },
-    {
-        'id': '3',
-        'name': 'Prof. Ana Martín',
-        'email': 'ana.martin@colegio.edu',
-        'phone': '555-1003',
-        'subject': 'Literatura',
-        'qualification': 'Maestría en Literatura Hispanoamericana',
-        'experience_years': 15,
-        'hire_date': '2015-03-10',
-        'status': 'active',
-        'salary': 4200000,
-        'address': 'Calle Literaria #789',
-        'department': 'Humanidades',
-        'created_at': '2024-01-12T11:15:00Z',
-        'updated_at': '2024-01-12T11:15:00Z'
-    }
-]
+keycloak_openid = KeycloakOpenID(
+    server_url="http://localhost:8082",
+    client_id="01",
+    realm_name="platamaformaInstitucional",
+    client_secret_key="2m2KWH4lyYgh9CwoM1y2QI6bFrDjR3OV"
+)
+
+def tiene_rol(token_info, cliente_id, rol_requerido):
+    try:
+        # Revisar roles a nivel de realm
+        realm_roles = token_info.get("realm_access", {}).get("roles", [])
+        if rol_requerido in realm_roles:
+            return True
+
+        # Revisar roles a nivel de cliente (resource_access)
+        resource_roles = token_info.get("resource_access", {}).get(cliente_id, {}).get("roles", [])
+        if rol_requerido in resource_roles:
+            return True
+
+        return False
+    except Exception:
+        return False
+
+def token_required(rol_requerido):
+    def decorator(f):
+        @wraps(f)
+        def decorated (*args, **kwargs):
+            auth_header = request.headers.get('Authorization', None)
+            if not auth_header:
+                return jsonify({"error": "Token Requerido"}), 401
+            
+            try:
+                token = auth_header.split(" ")[1]
+                userinfo = keycloak_openid.decode_token(token)
+            except Exception as e:
+                return jsonify({"error": "Token inválido o expirado"}), 401
+            if not tiene_rol(userinfo, keycloak_openid.client_id, rol_requerido):
+                return jsonify({"error": f"Acceso denegado: se requiere el rol '{rol_requerido}'"}), 403
+            # guardar información del usuario en 'g' para que la función pueda acceder si lo necesita
+            g.userinfo = userinfo
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 @app.route('/')
 def home():
     return jsonify({
         'service': 'Teachers Service',
-        'version': '1.0.0',
+        'version': '2.0.0',
+        'database': 'MongoDB',
         'endpoints': {
             'get_all': 'GET /teachers',
             'get_one': 'GET /teachers/{id}',
             'create': 'POST /teachers',
             'update': 'PUT /teachers/{id}',
             'delete': 'DELETE /teachers/{id}',
-            'by_subject': 'GET /teachers?subject={subject}',
-            'by_department': 'GET /teachers?department={department}'
+            'by_subject': 'GET /teachers?subject={subject}'
         }
     })
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy', 'service': 'teachers'})
+    return jsonify({'status': 'healthy', 'service': 'teachers', 'database': 'MongoDB'})
 
 @app.route('/teachers', methods=['GET'])
 def get_teachers():
     """Obtener todos los profesores"""
     try:
+        usuarios = get_usuarios_collection()
+        
         # Filtros opcionales
-        subject = request.args.get('subject')
-        department = request.args.get('department')
-        status = request.args.get('status', 'active')
+        especialidad = request.args.get('especialidad') or request.args.get('subject')
+        status = request.args.get('status')
         
-        filtered_teachers = teachers_db
-        
-        if subject:
-            filtered_teachers = [t for t in filtered_teachers if t.get('subject', '').lower() == subject.lower()]
-        
-        if department:
-            filtered_teachers = [t for t in filtered_teachers if t.get('department', '').lower() == department.lower()]
+        # Construir query
+        query = {'rol': 'docente'}
         
         if status:
-            filtered_teachers = [t for t in filtered_teachers if t.get('status') == status]
+            query['activo'] = (status.lower() == 'active')
+        
+        if especialidad:
+            query['especialidad'] = {'$regex': especialidad, '$options': 'i'}
+        
+        # Buscar docentes
+        docentes = list(usuarios.find(query))
+        
+        # Serializar documentos
+        docentes_serializados = serialize_doc(docentes)
         
         return jsonify({
-            'teachers': filtered_teachers,
-            'count': len(filtered_teachers),
-            'total': len(teachers_db)
+            'success': True,
+            'data': docentes_serializados,
+            'count': len(docentes_serializados)
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/teachers/<teacher_id>', methods=['GET'])
 def get_teacher(teacher_id):
     """Obtener un profesor por ID"""
     try:
-        teacher = next((t for t in teachers_db if t['id'] == teacher_id), None)
+        usuarios = get_usuarios_collection()
         
-        if not teacher:
-            return jsonify({'error': 'Teacher not found'}), 404
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(teacher_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
         
-        return jsonify({'teacher': teacher}), 200
+        # Buscar docente
+        docente = usuarios.find_one({'_id': obj_id, 'rol': 'docente'})
+        
+        if not docente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
+        
+        return jsonify({
+            'success': True,
+            'data': serialize_doc(docente)
+        }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/teachers', methods=['POST'])
 def create_teacher():
@@ -134,48 +151,69 @@ def create_teacher():
         data = request.get_json()
         
         if not data:
-            return jsonify({'error': 'No data provided'}), 400
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
         
         # Validar campos requeridos
-        required_fields = ['name', 'email', 'phone', 'subject']
+        required_fields = ['correo', 'nombres', 'apellidos']
         for field in required_fields:
-            if not data.get(field):
-                return jsonify({'error': f'Missing required field: {field}'}), 400
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'error': f'El campo {field} es requerido'
+                }), 400
+
+        usuarios = get_usuarios_collection()
         
-        # Verificar si el email ya existe
-        if any(t['email'] == data['email'] for t in teachers_db):
-            return jsonify({'error': 'Email already exists'}), 400
+        # Verificar si el correo ya existe
+        if usuarios.find_one({'correo': data['correo']}):
+            return jsonify({
+                'success': False,
+                'error': 'El correo ya está registrado'
+            }), 400
         
-        # Crear profesor
-        new_id = str(len(teachers_db) + 1)
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-        
-        teacher = {
-            'id': new_id,
-            'name': data['name'],
-            'email': data['email'],
-            'phone': data['phone'],
-            'subject': data['subject'],
-            'qualification': data.get('qualification', ''),
-            'experience_years': data.get('experience_years', 0),
-            'hire_date': data.get('hire_date', timestamp.split('T')[0]),
-            'status': data.get('status', 'active'),
-            'salary': data.get('salary', 0),
-            'address': data.get('address', ''),
-            'department': data.get('department', ''),
-            'created_at': timestamp,
-            'updated_at': timestamp
+        # Crear documento del docente
+        nuevo_docente = {
+            'correo': data['correo'],
+            'rol': 'docente',
+            'nombres': data['nombres'],
+            'apellidos': data['apellidos'],
+            'creado_en': Timestamp(int(datetime.utcnow().timestamp()), 0),
+            'activo': data.get('activo', True)
         }
         
-        teachers_db.append(teacher)
+        # Campos opcionales específicos de docente
+        if 'telefono' in data:
+            nuevo_docente['telefono'] = data['telefono']
+        if 'codigo_empleado' in data:
+            nuevo_docente['codigo_empleado'] = data['codigo_empleado']
+        if 'especialidad' in data:
+            nuevo_docente['especialidad'] = data['especialidad']
+        if 'fecha_ingreso' in data:
+            nuevo_docente['fecha_ingreso'] = datetime.fromisoformat(data['fecha_ingreso'].replace('Z', '+00:00'))
+        
+        # Insertar en la base de datos
+        resultado = usuarios.insert_one(nuevo_docente)
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='crear_docente',
+            entidad_afectada='usuarios',
+            id_entidad=str(resultado.inserted_id),
+            detalles=f"Docente creado: {data['nombres']} {data['apellidos']}"
+        )
+        
+        # Obtener el documento insertado
+        docente_creado = usuarios.find_one({'_id': resultado.inserted_id})
         
         return jsonify({
-            'message': 'Teacher created successfully',
-            'teacher': teacher
+            'success': True,
+            'message': 'Docente creado exitosamente',
+            'data': serialize_doc(docente_creado)
         }), 201
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/teachers/<teacher_id>', methods=['PUT'])
 def update_teacher(teacher_id):
@@ -184,125 +222,170 @@ def update_teacher(teacher_id):
         data = request.get_json()
         
         if not data:
-            return jsonify({'error': 'No data provided'}), 400
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
         
-        # Buscar profesor
-        teacher_index = next((i for i, t in enumerate(teachers_db) if t['id'] == teacher_id), None)
+        usuarios = get_usuarios_collection()
         
-        if teacher_index is None:
-            return jsonify({'error': 'Teacher not found'}), 404
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(teacher_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
         
-        # Verificar email único (si se está actualizando)
-        if 'email' in data:
-            existing_email = any(t['email'] == data['email'] and t['id'] != teacher_id for t in teachers_db)
-            if existing_email:
-                return jsonify({'error': 'Email already exists'}), 400
+        # Verificar que el docente existe
+        docente_existente = usuarios.find_one({'_id': obj_id, 'rol': 'docente'})
+        if not docente_existente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
         
-        # Actualizar campos
-        updatable_fields = ['name', 'email', 'phone', 'subject', 'qualification', 'experience_years', 'hire_date', 'status', 'salary', 'address', 'department']
+        # Preparar datos para actualizar (excluir campos que no se deben modificar)
+        campos_no_modificables = {'_id', 'rol', 'creado_en', 'correo'}
+        datos_actualizacion = {k: v for k, v in data.items() if k not in campos_no_modificables}
         
-        for field in updatable_fields:
-            if field in data:
-                teachers_db[teacher_index][field] = data[field]
+        # Convertir fecha_ingreso si viene en el request
+        if 'fecha_ingreso' in datos_actualizacion:
+            datos_actualizacion['fecha_ingreso'] = datetime.fromisoformat(
+                datos_actualizacion['fecha_ingreso'].replace('Z', '+00:00')
+            )
         
-        teachers_db[teacher_index]['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        # Actualizar
+        resultado = usuarios.update_one(
+            {'_id': obj_id},
+            {'$set': datos_actualizacion}
+        )
         
-        return jsonify({
-            'message': 'Teacher updated successfully',
-            'teacher': teachers_db[teacher_index]
-        }), 200
+        if resultado.modified_count > 0:
+            # Registrar en auditoría
+            registrar_auditoria(
+                id_usuario=None,
+                accion='actualizar_docente',
+                entidad_afectada='usuarios',
+                id_entidad=teacher_id,
+                detalles=f"Campos actualizados: {', '.join(datos_actualizacion.keys())}"
+            )
+            
+            # Obtener documento actualizado
+            docente_actualizado = usuarios.find_one({'_id': obj_id})
+            
+            return jsonify({
+                'success': True,
+                'message': 'Docente actualizado exitosamente',
+                'data': serialize_doc(docente_actualizado)
+            }), 200
+        else:
+            return jsonify({
+                'success': True,
+                'message': 'No se realizaron cambios',
+                'data': serialize_doc(docente_existente)
+            }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/teachers/<teacher_id>', methods=['DELETE'])
 def delete_teacher(teacher_id):
-    """Eliminar un profesor"""
+    """Eliminar (desactivar) un profesor"""
     try:
-        teacher_index = next((i for i, t in enumerate(teachers_db) if t['id'] == teacher_id), None)
+        usuarios = get_usuarios_collection()
         
-        if teacher_index is None:
-            return jsonify({'error': 'Teacher not found'}), 404
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(teacher_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
         
-        deleted_teacher = teachers_db.pop(teacher_index)
+        # Verificar que el docente existe
+        docente = usuarios.find_one({'_id': obj_id, 'rol': 'docente'})
+        if not docente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
+        
+        # Desactivar (no eliminar físicamente)
+        resultado = usuarios.update_one(
+            {'_id': obj_id},
+            {'$set': {'activo': False}}
+        )
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            id_usuario=None,
+            accion='desactivar_docente',
+            entidad_afectada='usuarios',
+            id_entidad=teacher_id,
+            detalles=f"Docente desactivado: {docente['nombres']} {docente['apellidos']}"
+        )
         
         return jsonify({
-            'message': 'Teacher deleted successfully',
-            'deleted_teacher': deleted_teacher
+            'success': True,
+            'message': 'Docente desactivado exitosamente'
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/subjects', methods=['GET'])
 def get_subjects():
-    """Obtener lista de materias disponibles"""
+    """Obtener lista de especialidades disponibles"""
     try:
-        subjects = list(set(t.get('subject', '') for t in teachers_db if t.get('subject')))
-        subjects.sort()
+        usuarios = get_usuarios_collection()
+        
+        # Obtener especialidades únicas de todos los docentes
+        especialidades = usuarios.distinct('especialidad', {'rol': 'docente', 'especialidad': {'$exists': True, '$ne': None}})
         
         return jsonify({
-            'subjects': subjects,
-            'count': len(subjects)
+            'success': True,
+            'subjects': especialidades
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/departments', methods=['GET'])
-def get_departments():
-    """Obtener lista de departamentos disponibles"""
+@app.route('/teacher/groups/<teacher_id>')
+def teacher_groups(teacher_id):
+    """Obtener grupos asignados a un docente"""
     try:
-        departments = list(set(t.get('department', '') for t in teachers_db if t.get('department')))
-        departments.sort()
+        cursos = get_cursos_collection()
+        
+        # Convertir ID a ObjectId
+        obj_id = string_to_objectid(teacher_id)
+        if not obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
+        
+        # Buscar cursos del docente
+        grupos = list(cursos.find({'id_docente': obj_id, 'activo': True}))
         
         return jsonify({
-            'departments': departments,
-            'count': len(departments)
+            'success': True,
+            'groups': serialize_doc(grupos)
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# Manejo de errores
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
-
-
-@app.route('/teacher/groups')
-def teacher_groups():
-    # Mock: grupos asignados y progreso
-    groups = [
-        {'id': 'g1', 'name': "10°A - Matemáticas", 'students': 28, 'progress_pct': 75},
-        {'id': 'g2', 'name': "11°B - Física", 'students': 25, 'progress_pct': 60},
-        {'id': 'g3', 'name': "9°C - Matemáticas", 'students': 30, 'progress_pct': 80}
-    ]
-    return jsonify({'groups': groups}), 200
-
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/teacher/pending-grades')
 def teacher_pending_grades():
+    """Calificaciones pendientes (mock por ahora)"""
     pending = [
         {'course': "Matemáticas 10°A", 'pending': 12},
         {'course': "Física 11°B", 'pending': 8},
         {'course': "Matemáticas 9°C", 'pending': 5}
     ]
-    return jsonify({'pending': pending}), 200
-
+    return jsonify(pending), 200
 
 @app.route('/teacher/overview')
 def teacher_overview():
+    """Resumen del docente (mock por ahora)"""
     overview = {
         'groups_count': 3,
         'pending_grades': 25,
         'next_event': 'Entrega de notas el viernes'
     }
-    return jsonify({'overview': overview}), 200
+    return jsonify(overview), 200
+
+# Manejo de errores
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'success': False, 'error': 'Endpoint no encontrado'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'success': False, 'error': 'Error interno del servidor'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)
