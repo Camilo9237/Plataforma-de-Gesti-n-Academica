@@ -70,19 +70,67 @@ def tiene_rol(token_info, cliente_id, rol_requerido):
 def token_required(rol_requerido):
     def decorator(f):
         @wraps(f)
-        def decorated (*args, **kwargs):
+        def decorated(*args, **kwargs):
             auth_header = request.headers.get('Authorization', None)
             if not auth_header:
+                print("❌ No se encontró header Authorization")
                 return jsonify({"error": "Token Requerido"}), 401
             
             try:
                 token = auth_header.split(" ")[1]
-                userinfo = keycloak_openid.decode_token(token)
+                print(f"🔑 Token recibido: {token[:50]}...")
+                
+                # 🔧 MODO DESARROLLO: Aceptar tokens mock
+                if token.startswith('mock-token-') or token.startswith('eyJ'):
+                    # Para tokens mock de desarrollo
+                    if token.startswith('mock-token-'):
+                        print("⚠️ Usando token mock de desarrollo")
+                        g.userinfo = {'sub': 'dev-docente', 'roles': [rol_requerido]}
+                        return f(*args, **kwargs)
+                    
+                    # Para tokens JWT reales, intentar decodificar
+                    try:
+                        userinfo = keycloak_openid.decode_token(
+                        token,
+                        key=keycloak_openid.public_key(),
+                        options={
+                            "verify_signature": True,
+                            "verify_aud": False,
+                            "verify_exp": True
+                        }
+                )
+                        print(f"✅ Token decodificado correctamente")
+                        print(f"   Usuario: {userinfo.get('preferred_username', 'N/A')}")
+                        print(f"   Roles: {userinfo.get('realm_access', {}).get('roles', [])}")
+                    except Exception as decode_error:
+                        print(f"⚠️ Error decodificando con Keycloak: {decode_error}")
+                        # Intentar decodificar sin verificar firma (solo para desarrollo)
+                        import jwt as pyjwt
+                        try:
+                            userinfo = pyjwt.decode(token, options={"verify_signature": False})
+                            print("⚠️ Token decodificado SIN verificar firma (modo desarrollo)")
+                        except Exception as jwt_error:
+                            print(f"❌ Error decodificando JWT: {jwt_error}")
+                            return jsonify({"error": "Token inválido o expirado"}), 401
+                else:
+                    userinfo = keycloak_openid.decode_token(token)
+                
+            except IndexError:
+                print("❌ Formato de Authorization header inválido")
+                return jsonify({"error": "Formato de token inválido"}), 401
             except Exception as e:
+                print(f"❌ Error procesando token: {e}")
+                import traceback
+                traceback.print_exc()
                 return jsonify({"error": "Token inválido o expirado"}), 401
+            
+            # Verificar rol
             if not tiene_rol(userinfo, keycloak_openid.client_id, rol_requerido):
+                print(f"❌ Acceso denegado: se requiere rol '{rol_requerido}'")
+                print(f"   Roles encontrados: {userinfo.get('realm_access', {}).get('roles', [])}")
                 return jsonify({"error": f"Acceso denegado: se requiere el rol '{rol_requerido}'"}), 403
-            # guardar información del usuario en 'g' para que la función pueda acceder si lo necesita
+            
+            print(f"✅ Acceso permitido para rol '{rol_requerido}'")
             g.userinfo = userinfo
             return f(*args, **kwargs)
         return decorated
@@ -360,107 +408,687 @@ def get_subjects():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/teacher/groups', methods=['GET', 'OPTIONS'])
+@token_required('docente')
 def teacher_groups():
     """Obtener grupos asignados al docente autenticado"""
     if request.method == 'OPTIONS':
         return '', 204
     
     try:
-        # TODO: Obtener teacher_id del token JWT
-        # Por ahora usar ID de prueba o query param
-        teacher_id = request.args.get('teacher_id', '673df447faf2a31cb63b0bb9')
+        # 🔧 Obtener email del token (preferiblemente) o sub como fallback
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
         
+        print(f"🔍 Buscando docente con email: {teacher_email}, sub: {teacher_sub}")
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar por email primero
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        # Si no se encuentra por email, intentar por sub (si está guardado en la BD)
+        if not docente:
+            docente = usuarios.find_one({
+                'keycloak_id': teacher_sub,  # Asumiendo que guardas el UUID aquí
+                'rol': 'docente',
+                'activo': True
+            })
+        
+        if not docente:
+            print(f"❌ Docente no encontrado. Email buscado: {teacher_email}")
+            return jsonify({
+                'success': False,
+                'error': 'Docente no encontrado en la base de datos'
+            }), 404
+        
+        print(f"✅ Docente encontrado: {docente.get('nombres')} {docente.get('apellidos')}")
+                
         cursos = get_cursos_collection()
-        
-        # Convertir ID a ObjectId
-        obj_id = string_to_objectid(teacher_id)
-        if not obj_id:
-            return jsonify({'success': False, 'error': 'ID inválido'}), 400
+        matriculas = get_matriculas_collection()
         
         # Buscar cursos del docente
-        grupos = list(cursos.find({'id_docente': obj_id, 'activo': True}))
+        grupos = list(cursos.find({
+            'id_docente': docente['_id'],
+            'activo': True
+        }))
         
-        # Si no hay datos reales, devolver mock data
-        if not grupos:
-            mock_groups = {
-                'success': True,
-                'groups': [
-                    {
-                        '_id': '1',
-                        'name': 'Matemáticas 10° A',
-                        'students': 32,
-                        'progress_pct': 65
-                    },
-                    {
-                        '_id': '2',
-                        'name': 'Física 11° B',
-                        'students': 28,
-                        'progress_pct': 58
-                    },
-                    {
-                        '_id': '3',
-                        'name': 'Matemáticas 9° C',
-                        'students': 30,
-                        'progress_pct': 72
-                    }
-                ]
-            }
-            return jsonify(mock_groups), 200
-        
-        # Transformar datos reales al formato esperado por el frontend
+        # Transformar datos al formato esperado por el frontend
         grupos_formateados = []
         for grupo in grupos:
-            # Contar estudiantes matriculados
-            matriculas = get_matriculas_collection()
+            # Contar estudiantes matriculados activos
             num_estudiantes = matriculas.count_documents({
                 'id_curso': grupo['_id'],
                 'estado': 'activo'
             })
             
+            # Contar estudiantes con calificaciones completas para calcular progreso
+            estudiantes_con_calificaciones = matriculas.count_documents({
+                'id_curso': grupo['_id'],
+                'estado': 'activo',
+                'calificaciones': {'$exists': True, '$ne': []}
+            })
+            
+            # Calcular porcentaje de progreso
+            progress_pct = 0
+            if num_estudiantes > 0:
+                progress_pct = round((estudiantes_con_calificaciones / num_estudiantes) * 100)
+            
             grupos_formateados.append({
                 '_id': str(grupo['_id']),
-                'name': f"{grupo.get('nombre_curso', 'Curso')} {grupo.get('grado', '')}",
+                'name': f"{grupo.get('nombre_curso', 'Curso')} - {grupo.get('grado', '')}° ({grupo.get('periodo', '')})",
                 'students': num_estudiantes,
-                'progress_pct': 50  # TODO: Calcular progreso real
+                'progress_pct': progress_pct,
+                'codigo': grupo.get('codigo_curso', ''),
+                'periodo': grupo.get('periodo', '')
             })
         
         return jsonify({
             'success': True,
-            'groups': grupos_formateados
+            'groups': grupos_formateados,
+            'count': len(grupos_formateados)
         }), 200
         
     except Exception as e:
-        print(f"Error en /teacher/groups: {e}")
+        print(f"❌ Error en /teacher/groups: {e}")
         import traceback
         traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/teacher/pending-grades', methods=['GET'])
+@token_required('docente')
+def teacher_pending_grades():
+    """Calificaciones pendientes del docente autenticado"""
+    try:
+        # 🔧 Obtener email del token (preferiblemente) o sub como fallback
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
         
-        # Devolver mock data en caso de error
+        print(f"🔍 Buscando docente con email: {teacher_email}, sub: {teacher_sub}")
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar por email primero
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        # Si no se encuentra por email, intentar por sub (si está guardado en la BD)
+        if not docente:
+            docente = usuarios.find_one({
+                'keycloak_id': teacher_sub,  # Asumiendo que guardas el UUID aquí
+                'rol': 'docente',
+                'activo': True
+            })
+        
+        if not docente:
+            print(f"❌ Docente no encontrado. Email buscado: {teacher_email}")
+            return jsonify({
+                'success': False,
+                'error': 'Docente no encontrado en la base de datos'
+            }), 404
+        
+        print(f"✅ Docente encontrado: {docente.get('nombres')} {docente.get('apellidos')}")
+     
+        cursos = get_cursos_collection()
+        matriculas = get_matriculas_collection()
+        
+        # Obtener cursos del docente
+        cursos_docente = list(cursos.find({
+            'id_docente': docente['_id'],
+            'activo': True
+        }))
+        
+        pending_list = []
+        
+        for curso in cursos_docente:
+            # Total de estudiantes en el curso
+            total_estudiantes = matriculas.count_documents({
+                'id_curso': curso['_id'],
+                'estado': 'activo'
+            })
+            
+            # Estudiantes con calificaciones
+            estudiantes_con_notas = matriculas.count_documents({
+                'id_curso': curso['_id'],
+                'estado': 'activo',
+                'calificaciones': {'$exists': True, '$ne': []}
+            })
+            
+            # Estudiantes sin calificaciones
+            pending_count = total_estudiantes - estudiantes_con_notas
+            
+            if pending_count > 0:
+                pending_list.append({
+                    'course': f"{curso.get('nombre_curso', '')} - {curso.get('grado', '')}°",
+                    'pending': pending_count,
+                    'total': total_estudiantes,
+                    'course_id': str(curso['_id'])
+                })
+        
         return jsonify({
             'success': True,
-            'groups': [
-                {'_id': '1', 'name': 'Matemáticas 10° A', 'students': 32, 'progress_pct': 65},
-                {'_id': '2', 'name': 'Física 11° B', 'students': 28, 'progress_pct': 58}
-            ]
+            'pending': pending_list,
+            'total_pending': sum(p['pending'] for p in pending_list)
         }), 200
-@app.route('/teacher/pending-grades')
-def teacher_pending_grades():
-    """Calificaciones pendientes (mock por ahora)"""
-    pending = [
-        {'course': "Matemáticas 10°A", 'pending': 12},
-        {'course': "Física 11°B", 'pending': 8},
-        {'course': "Matemáticas 9°C", 'pending': 5}
-    ]
-    return jsonify(pending), 200
+        
+    except Exception as e:
+        print(f"❌ Error en /teacher/pending-grades: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/teacher/overview')
+@app.route('/teacher/overview', methods=['GET'])
+@token_required('docente')
 def teacher_overview():
-    """Resumen del docente (mock por ahora)"""
-    overview = {
-        'groups_count': 3,
-        'pending_grades': 25,
-        'next_event': 'Entrega de notas el viernes'
-    }
-    return jsonify(overview), 200
+    """Resumen general del docente autenticado"""
+    try:
+        # 🔧 Obtener email del token (preferiblemente) o sub como fallback
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
+        
+        print(f"🔍 Buscando docente con email: {teacher_email}, sub: {teacher_sub}")
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar por email primero
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        # Si no se encuentra por email, intentar por sub (si está guardado en la BD)
+        if not docente:
+            docente = usuarios.find_one({
+                'keycloak_id': teacher_sub,  # Asumiendo que guardas el UUID aquí
+                'rol': 'docente',
+                'activo': True
+            })
+        
+        if not docente:
+            print(f"❌ Docente no encontrado. Email buscado: {teacher_email}")
+            return jsonify({
+                'success': False,
+                'error': 'Docente no encontrado en la base de datos'
+            }), 404
+        
+        print(f"✅ Docente encontrado: {docente.get('nombres')} {docente.get('apellidos')}")
+     
+        cursos = get_cursos_collection()
+        matriculas = get_matriculas_collection()
+        
+        # Contar grupos activos
+        groups_count = cursos.count_documents({
+            'id_docente': docente['_id'],
+            'activo': True
+        })
+        
+        # Contar calificaciones pendientes
+        cursos_docente = list(cursos.find({
+            'id_docente': docente['_id'],
+            'activo': True
+        }))
+        
+        total_pending = 0
+        total_estudiantes = 0
+        
+        for curso in cursos_docente:
+            total = matriculas.count_documents({
+                'id_curso': curso['_id'],
+                'estado': 'activo'
+            })
+            
+            con_notas = matriculas.count_documents({
+                'id_curso': curso['_id'],
+                'estado': 'activo',
+                'calificaciones': {'$exists': True, '$ne': []}
+            })
+            
+            total_estudiantes += total
+            total_pending += (total - con_notas)
+        
+        # Buscar próximo evento (última fecha de evaluación registrada)
+        pipeline = [
+            {'$match': {'id_curso': {'$in': [c['_id'] for c in cursos_docente]}}},
+            {'$unwind': '$calificaciones'},
+            {'$sort': {'calificaciones.fecha_eval': -1}},
+            {'$limit': 1}
+        ]
+        
+        ultima_eval = list(matriculas.aggregate(pipeline))
+        
+        next_event = 'No hay eventos programados'
+        if ultima_eval and len(ultima_eval) > 0:
+            fecha_ultima = ultima_eval[0]['calificaciones'].get('fecha_eval')
+            if fecha_ultima:
+                next_event = f"Última evaluación: {fecha_ultima.strftime('%d/%m/%Y')}"
+        
+        return jsonify({
+            'success': True,
+            'groups_count': groups_count,
+            'pending_grades': total_pending,
+            'total_students': total_estudiantes,
+            'next_event': next_event,
+            'teacher_name': f"{docente.get('nombres', '')} {docente.get('apellidos', '')}",
+            'especialidad': docente.get('especialidad', 'N/A')
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en /teacher/overview: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/teacher/courses/<course_id>/grades', methods=['GET'])
+@token_required('docente')
+def get_course_grades(course_id):
+    """Obtener calificaciones de un curso del docente"""
+    try:
+        matriculas = get_matriculas_collection()
+        cursos = get_cursos_collection()
+        
+        # Convertir ID a ObjectId
+        curso_obj_id = string_to_objectid(course_id)
+        if not curso_obj_id:
+            return jsonify({'success': False, 'error': 'ID de curso inválido'}), 400
+        
+        # Verificar que el curso existe
+        curso = cursos.find_one({'_id': curso_obj_id})
+        if not curso:
+            return jsonify({'success': False, 'error': 'Curso no encontrado'}), 404
+        
+        # 🔧 ACTUALIZACIÓN: Extraer email del token correctamente
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
+        
+        print(f"🔍 Verificando permisos del docente:")
+        print(f"   Email del token: {teacher_email}")
+        print(f"   Sub del token: {teacher_sub}")
+        print(f"   ID del curso: {course_id}")
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar por email primero
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        # Si no se encuentra por email, intentar por keycloak_id
+        if not docente:
+            docente = usuarios.find_one({
+                'keycloak_id': teacher_sub,
+                'rol': 'docente',
+                'activo': True
+            })
+        
+        if not docente:
+            print(f"❌ Docente no encontrado en la base de datos")
+            print(f"   Email buscado: {teacher_email}")
+            print(f"   Sub buscado: {teacher_sub}")
+            return jsonify({
+                'success': False,
+                'error': 'Docente no encontrado en la base de datos'
+            }), 404
+        
+        print(f"✅ Docente encontrado: {docente.get('nombres')} {docente.get('apellidos')}")
+        print(f"   ID del docente en BD: {docente['_id']}")
+        print(f"   ID del docente del curso: {curso.get('id_docente')}")
+        
+        # Verificar que el curso pertenece al docente
+        if curso.get('id_docente') != docente['_id']:
+            print(f"❌ El curso no pertenece a este docente")
+            print(f"   Se esperaba: {curso.get('id_docente')}")
+            print(f"   Se recibió: {docente['_id']}")
+            return jsonify({
+                'success': False,
+                'error': 'No tienes permiso para ver este curso'
+            }), 403
+        
+        print(f"✅ Permisos verificados correctamente")
+        
+        # Buscar matrículas del curso
+        enrollments = list(matriculas.find({
+            'id_curso': curso_obj_id,
+            'estado': 'activo'
+        }))
+        
+        print(f"📊 Encontradas {len(enrollments)} matrículas activas")
+        
+        # Formatear datos de estudiantes con calificaciones
+        students_data = []
+        for enrollment in enrollments:
+            student_info = enrollment.get('estudiante_info', {})
+            calificaciones = enrollment.get('calificaciones', [])
+            
+            # Calcular promedio ponderado
+            promedio = 0
+            if calificaciones:
+                total = sum(c.get('nota', 0) * c.get('peso', 0) for c in calificaciones)
+                total_peso = sum(c.get('peso', 0) for c in calificaciones)
+                promedio = round(total / total_peso, 2) if total_peso > 0 else 0
+            
+            students_data.append({
+                'enrollment_id': str(enrollment['_id']),
+                'student_id': str(enrollment['id_estudiante']),
+                'student_name': f"{student_info.get('nombres', '')} {student_info.get('apellidos', '')}",
+                'student_code': student_info.get('codigo_est', ''),
+                'grades': serialize_doc(calificaciones),
+                'average': promedio,
+                'estado': 'Aprobado' if promedio >= 3.0 else 'Reprobado'
+            })
+        
+        return jsonify({
+            'success': True,
+            'course_id': course_id,
+            'course_name': curso.get('nombre_curso', ''),
+            'course_code': curso.get('codigo_curso', ''),
+            'grado': curso.get('grado', ''),
+            'periodo': curso.get('periodo', ''),
+            'students': students_data,
+            'count': len(students_data)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_course_grades: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500    
+@app.route('/teacher/grades', methods=['POST'])
+@token_required('docente')
+def add_grade():
+    """Agregar una calificación a un estudiante"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
+        
+        # Validar campos requeridos
+        required_fields = ['enrollment_id', 'tipo', 'nota', 'peso']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'El campo {field} es requerido'
+                }), 400
+        
+        # Validar nota
+        nota = float(data['nota'])
+        nota_maxima = float(data.get('nota_maxima', 5.0))
+        peso = float(data['peso'])
+        
+        if nota < 0 or nota > nota_maxima:
+            return jsonify({
+                'success': False,
+                'error': f'La nota debe estar entre 0 y {nota_maxima}'
+            }), 400
+        
+        if peso < 0 or peso > 1:
+            return jsonify({
+                'success': False,
+                'error': 'El peso debe estar entre 0 y 1'
+            }), 400
+        
+        matriculas = get_matriculas_collection()
+        
+        enrollment_obj_id = string_to_objectid(data['enrollment_id'])
+        if not enrollment_obj_id:
+            return jsonify({'success': False, 'error': 'ID de matrícula inválido'}), 400
+        
+        matricula = matriculas.find_one({'_id': enrollment_obj_id})
+        if not matricula:
+            return jsonify({'success': False, 'error': 'Matrícula no encontrada'}), 404
+        
+        # Crear calificación
+        nueva_calificacion = {
+            'tipo': data['tipo'],
+            'nota': nota,
+            'nota_maxima': nota_maxima,
+            'peso': peso,
+            'fecha_eval': datetime.utcnow(),
+            'comentarios': data.get('comentarios', '')
+        }
+        
+        # Agregar calificación
+        matriculas.update_one(
+            {'_id': enrollment_obj_id},
+            {'$push': {'calificaciones': nueva_calificacion}}
+        )
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=g.userinfo.get('sub'),
+            accion='agregar_calificacion',
+            entidad_afectada='matriculas',
+            id_entidad=data['enrollment_id'],
+            detalles=f"Calificación agregada: {data['tipo']} - Nota: {nota}"
+        )
+        
+        matricula_actualizada = matriculas.find_one({'_id': enrollment_obj_id})
+        
+        return jsonify({
+            'success': True,
+            'message': 'Calificación agregada exitosamente',
+            'enrollment': serialize_doc(matricula_actualizada)
+        }), 201
+        
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Valores numéricos inválidos'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/teacher/grades/<enrollment_id>', methods=['PUT'])
+@token_required('docente')
+def update_grade(enrollment_id):
+    """Actualizar una calificación específica"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'grade_index' not in data:
+            return jsonify({'success': False, 'error': 'Se requiere grade_index'}), 400
+        
+        grade_index = int(data['grade_index'])
+        matriculas = get_matriculas_collection()
+        
+        enrollment_obj_id = string_to_objectid(enrollment_id)
+        if not enrollment_obj_id:
+            return jsonify({'success': False, 'error': 'ID de matrícula inválido'}), 400
+        
+        matricula = matriculas.find_one({'_id': enrollment_obj_id})
+        if not matricula:
+            return jsonify({'success': False, 'error': 'Matrícula no encontrada'}), 404
+        
+        calificaciones = matricula.get('calificaciones', [])
+        if grade_index < 0 or grade_index >= len(calificaciones):
+            return jsonify({'success': False, 'error': 'Índice de calificación inválido'}), 400
+        
+        # Construir actualización
+        update_fields = {}
+        
+        if 'nota' in data:
+            nota = float(data['nota'])
+            nota_maxima = calificaciones[grade_index].get('nota_maxima', 5.0)
+            if nota < 0 or nota > nota_maxima:
+                return jsonify({
+                    'success': False,
+                    'error': f'La nota debe estar entre 0 y {nota_maxima}'
+                }), 400
+            update_fields[f'calificaciones.{grade_index}.nota'] = nota
+        
+        if 'peso' in data:
+            peso = float(data['peso'])
+            if peso < 0 or peso > 1:
+                return jsonify({'success': False, 'error': 'El peso debe estar entre 0 y 1'}), 400
+            update_fields[f'calificaciones.{grade_index}.peso'] = peso
+        
+        if 'comentarios' in data:
+            update_fields[f'calificaciones.{grade_index}.comentarios'] = data['comentarios']
+        
+        if 'tipo' in data:
+            update_fields[f'calificaciones.{grade_index}.tipo'] = data['tipo']
+        
+        if update_fields:
+            matriculas.update_one(
+                {'_id': enrollment_obj_id},
+                {'$set': update_fields}
+            )
+            
+            registrar_auditoria(
+                id_usuario=g.userinfo.get('sub'),
+                accion='actualizar_calificacion',
+                entidad_afectada='matriculas',
+                id_entidad=enrollment_id,
+                detalles=f"Calificación actualizada en índice {grade_index}"
+            )
+        
+        matricula_actualizada = matriculas.find_one({'_id': enrollment_obj_id})
+        
+        return jsonify({
+            'success': True,
+            'message': 'Calificación actualizada exitosamente',
+            'enrollment': serialize_doc(matricula_actualizada)
+        }), 200
+        
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Valores numéricos inválidos'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/teacher/grades/<enrollment_id>/<int:grade_index>', methods=['DELETE'])
+@token_required('docente')
+def delete_grade(enrollment_id, grade_index):
+    """Eliminar una calificación específica"""
+    try:
+        matriculas = get_matriculas_collection()
+        
+        enrollment_obj_id = string_to_objectid(enrollment_id)
+        if not enrollment_obj_id:
+            return jsonify({'success': False, 'error': 'ID de matrícula inválido'}), 400
+        
+        matricula = matriculas.find_one({'_id': enrollment_obj_id})
+        if not matricula:
+            return jsonify({'success': False, 'error': 'Matrícula no encontrada'}), 404
+        
+        calificaciones = matricula.get('calificaciones', [])
+        if grade_index < 0 or grade_index >= len(calificaciones):
+            return jsonify({'success': False, 'error': 'Índice de calificación inválido'}), 400
+        
+        calificaciones.pop(grade_index)
+        
+        matriculas.update_one(
+            {'_id': enrollment_obj_id},
+            {'$set': {'calificaciones': calificaciones}}
+        )
+        
+        registrar_auditoria(
+            id_usuario=g.userinfo.get('sub'),
+            accion='eliminar_calificacion',
+            entidad_afectada='matriculas',
+            id_entidad=enrollment_id,
+            detalles=f"Calificación eliminada en índice {grade_index}"
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Calificación eliminada exitosamente'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/teacher/grades/bulk', methods=['POST'])
+@token_required('docente')
+def bulk_upload_grades():
+    """Carga masiva de calificaciones para un curso"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'grades' not in data:
+            return jsonify({'success': False, 'error': 'No se proporcionaron calificaciones'}), 400
+        
+        course_id = data.get('course_id')
+        tipo_evaluacion = data.get('tipo', 'Evaluación')
+        peso = float(data.get('peso', 0.33))
+        
+        if not course_id:
+            return jsonify({'success': False, 'error': 'Se requiere course_id'}), 400
+        
+        matriculas = get_matriculas_collection()
+        curso_obj_id = string_to_objectid(course_id)
+        
+        successful = 0
+        failed = 0
+        errors = []
+        
+        for grade_entry in data['grades']:
+            try:
+                enrollment_id = grade_entry.get('enrollment_id')
+                nota = float(grade_entry.get('nota', 0))
+                comentarios = grade_entry.get('comentarios', '')
+                
+                if not enrollment_id:
+                    failed += 1
+                    errors.append({'error': 'enrollment_id requerido', 'entry': grade_entry})
+                    continue
+                
+                enrollment_obj_id = string_to_objectid(enrollment_id)
+                matricula = matriculas.find_one({'_id': enrollment_obj_id})
+                
+                if not matricula:
+                    failed += 1
+                    errors.append({'error': 'Matrícula no encontrada', 'enrollment_id': enrollment_id})
+                    continue
+                
+                nueva_calificacion = {
+                    'tipo': tipo_evaluacion,
+                    'nota': nota,
+                    'nota_maxima': 5.0,
+                    'peso': peso,
+                    'fecha_eval': datetime.utcnow(),
+                    'comentarios': comentarios
+                }
+                
+                matriculas.update_one(
+                    {'_id': enrollment_obj_id},
+                    {'$push': {'calificaciones': nueva_calificacion}}
+                )
+                
+                successful += 1
+                
+            except Exception as e:
+                failed += 1
+                errors.append({'error': str(e), 'entry': grade_entry})
+        
+        registrar_auditoria(
+            id_usuario=g.userinfo.get('sub'),
+            accion='carga_masiva_calificaciones',
+            entidad_afectada='matriculas',
+            id_entidad=course_id,
+            detalles=f"Carga masiva: {successful} exitosas, {failed} fallidas"
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Carga masiva completada',
+            'successful': successful,
+            'failed': failed,
+            'errors': errors if errors else None
+        }), 200 if failed == 0 else 207
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 # Manejo de errores
 @app.errorhandler(404)

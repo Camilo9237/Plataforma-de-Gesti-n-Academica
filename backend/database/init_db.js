@@ -116,9 +116,9 @@ db.createCollection("matriculas", {
             bsonType: "object",
             properties: {
               tipo: { bsonType: "string" },
-              nota: { bsonType: "double" },
-              nota_maxima: { bsonType: "double" },
-              peso: { bsonType: "double" },
+              nota: { bsonType: ["double", "int"] },  // ✅ Acepta ambos tipos
+              nota_maxima: { bsonType: ["double", "int"] },  // ✅ Acepta ambos tipos
+              peso: { bsonType: ["double", "int"] },  // ✅ Acepta ambos tipos
               fecha_eval: { bsonType: "date" },
               comentarios: { bsonType: "string" }
             }

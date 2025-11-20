@@ -76,6 +76,45 @@ export class ApiService {
     return this.http.get(`${environment.api.teachers}/teacher/pending-grades`);
   }
 
+  // ===== CALIFICACIONES (PROFESOR) =====
+  
+  getCourseGrades(courseId: string) {
+    return this.http.get(`${environment.api.teachers}/teacher/courses/${courseId}/grades`);
+  }
+
+  addGrade(data: {
+    enrollment_id: string;
+    tipo: string;
+    nota: number;
+    peso: number;
+    nota_maxima?: number;
+    comentarios?: string;
+  }) {
+    return this.http.post(`${environment.api.teachers}/teacher/grades`, data);
+  }
+
+  updateGrade(enrollmentId: string, gradeIndex: number, data: any) {
+    return this.http.put(`${environment.api.teachers}/teacher/grades/${enrollmentId}`, {
+      ...data,
+      grade_index: gradeIndex
+    });
+  }
+
+  deleteGrade(enrollmentId: string, gradeIndex: number) {
+    return this.http.delete(`${environment.api.teachers}/teacher/grades/${enrollmentId}/${gradeIndex}`);
+  }
+
+  bulkUploadGrades(data: {
+    course_id: string;
+    tipo: string;
+    peso: number;
+    grades: Array<{enrollment_id: string; nota: number; comentarios?: string}>;
+  }) {
+    return this.http.post(`${environment.api.teachers}/teacher/grades/bulk`, data);
+  }
+
+
+
   // ===== ADMINISTRADORES =====
   getAdministrators() {
     return this.http.get(`${environment.api.administrator}/administrators`);

@@ -22,7 +22,7 @@ print("✔ Administrador creado: " + admin1);
 
 // DOCENTES
 const docente1 = db.usuarios.insertOne({
-  correo: "juan.perez@colegio.edu",
+  correo: "juan.perez@colegio.edu.co",
   rol: "docente",
   nombres: "Juan",
   apellidos: "Pérez",
@@ -36,7 +36,7 @@ const docente1 = db.usuarios.insertOne({
 }).insertedId;
 
 const docente2 = db.usuarios.insertOne({
-  correo: "maria.lopez@colegio.edu",
+  correo: "maria.lopez@colegio.edu.co",
   rol: "docente",
   nombres: "María",
   apellidos: "López",
@@ -50,7 +50,7 @@ const docente2 = db.usuarios.insertOne({
 }).insertedId;
 
 const docente3 = db.usuarios.insertOne({
-  correo: "carlos.garcia@colegio.edu",
+  correo: "carlos.garcia@colegio.edu.co",
   rol: "docente",
   nombres: "Carlos",
   apellidos: "García",
@@ -67,7 +67,7 @@ print("✔ 3 Docentes creados");
 
 // ESTUDIANTES
 const estudiante1 = db.usuarios.insertOne({
-  correo: "carlos.ramirez@colegio.edu",
+  correo: "carlos.ramirez@colegio.edu.co",
   rol: "estudiante",
   nombres: "Carlos",
   apellidos: "Ramírez",
@@ -82,7 +82,7 @@ const estudiante1 = db.usuarios.insertOne({
 }).insertedId;
 
 const estudiante2 = db.usuarios.insertOne({
-  correo: "ana.torres@colegio.edu",
+  correo: "ana.torres@colegio.edu.co",
   rol: "estudiante",
   nombres: "Ana",
   apellidos: "Torres",
@@ -97,7 +97,7 @@ const estudiante2 = db.usuarios.insertOne({
 }).insertedId;
 
 const estudiante3 = db.usuarios.insertOne({
-  correo: "sofia.mendez@colegio.edu",
+  correo: "sofia.mendez@colegio.edu.co",
   rol: "estudiante",
   nombres: "Sofía",
   apellidos: "Méndez",
@@ -112,7 +112,7 @@ const estudiante3 = db.usuarios.insertOne({
 }).insertedId;
 
 const estudiante4 = db.usuarios.insertOne({
-  correo: "miguel.santos@colegio.edu",
+  correo: "miguel.santos@colegio.edu.co",
   rol: "estudiante",
   nombres: "Miguel",
   apellidos: "Santos",
