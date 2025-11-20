@@ -7,7 +7,7 @@ import { environment } from '../../environments/environment';
   providedIn: 'root'
 })
 export class ApiService {
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) { }
 
   // ===== AUTENTICACIÓN =====
   login(credentials: { username: string; password: string }) {
@@ -77,10 +77,8 @@ export class ApiService {
   }
 
   // ===== CALIFICACIONES (PROFESOR) =====
+
   
-  getCourseGrades(courseId: string) {
-    return this.http.get(`${environment.api.teachers}/teacher/courses/${courseId}/grades`);
-  }
 
   addGrade(data: {
     enrollment_id: string;
@@ -108,7 +106,7 @@ export class ApiService {
     course_id: string;
     tipo: string;
     peso: number;
-    grades: Array<{enrollment_id: string; nota: number; comentarios?: string}>;
+    grades: Array<{ enrollment_id: string; nota: number; comentarios?: string }>;
   }) {
     return this.http.post(`${environment.api.teachers}/teacher/grades/bulk`, data);
   }
@@ -153,7 +151,7 @@ export class ApiService {
   }
 
   // ===== REPORTES PDF =====
-  
+
   /**
    * Descarga certificado de estudios
    * @param studentId ID del estudiante
@@ -161,9 +159,9 @@ export class ApiService {
    */
   downloadCertificado(studentId: string, tipo: string): Observable<HttpResponse<Blob>> {
     const url = `${environment.api.students}/student/certificado/${tipo}?student_id=${studentId}`;
-    return this.http.get(url, { 
+    return this.http.get(url, {
       responseType: 'blob',
-      observe: 'response' 
+      observe: 'response'
     });
   }
 
@@ -174,9 +172,19 @@ export class ApiService {
    */
   downloadBoletin(studentId: string, periodo: string): Observable<HttpResponse<Blob>> {
     const url = `${environment.api.students}/student/boletin?student_id=${studentId}&periodo=${periodo}`;
-    return this.http.get(url, { 
+    return this.http.get(url, {
       responseType: 'blob',
-      observe: 'response' 
+      observe: 'response'
     });
+  }
+
+  // Agregar estos métodos a la clase ApiService
+
+  getGroupById(groupId: string): Observable<any> {
+    return this.http.get(`${environment.api.groups}/groups/${groupId}`);
+  }
+
+  getCourseGrades(courseId: string) {
+    return this.http.get(`${environment.api.teachers}/teacher/courses/${courseId}/grades`);
   }
 }

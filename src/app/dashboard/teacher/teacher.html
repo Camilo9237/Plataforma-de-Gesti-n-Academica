@@ -16,7 +16,7 @@
             <div class="group-meta">{{ g.students }} estudiantes</div>
           </div>
           <div class="group-actions">
-            <a class="btn-outline" [routerLink]="['/dashboard/teacher/group', g.id]">Ver Grupo</a>
+            <a class="btn-outline" [routerLink]="['/dashboard/teacher/group', g._id]">Ver Grupo</a>
           </div>
           <div class="progress-line">
             <div class="progress-fill" [style.width.%]="g.progress_pct"></div>

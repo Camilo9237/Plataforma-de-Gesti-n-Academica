@@ -32,6 +32,12 @@ export const routes: Routes = [
     data: { role: 'administrador' }
   },
   {
+  path: 'dashboard/teacher/group/:id',
+  loadComponent: () => import('./dashboard/teacher/group-detail/group-detail').then(m => m.default),
+  canActivate: [RoleGuard],
+  data: { role: 'docente' }
+},
+  {
     path: 'unauthorized',
     loadComponent: () => import('./authentication/unauthorized/unauthorized').then(m => m.default)
   },
