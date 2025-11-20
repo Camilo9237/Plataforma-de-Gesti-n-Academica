@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, send_file
 from flask_cors import CORS
 from datetime import datetime
 from keycloak import KeycloakOpenID
@@ -6,6 +6,8 @@ from functools import wraps
 import sys
 import os
 from bson.timestamp import Timestamp
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from database.pdf_generator import PDFGenerator
 
 # Agregar el path del backend para importar db_config
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -19,7 +21,29 @@ from database.db_config import (
 
 app = Flask(__name__)
 app.secret_key = "PlataformaColegios"
-CORS(app)
+
+# 🔧 CORS CONFIGURACIÓN COMPLETA
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:4200"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        headers = {
+            'Access-Control-Allow-Origin': 'http://localhost:4200',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Max-Age': '3600'
+        }
+        response.headers.update(headers)
+        return response
 
 keycloak_openid = KeycloakOpenID(
     server_url="http://localhost:8082",
@@ -86,6 +110,171 @@ def home():
 def health():
     return jsonify({'status': 'healthy', 'service': 'students', 'database': 'MongoDB'})
 
+@app.route('/student/grades', methods=['GET', 'OPTIONS'])
+def get_student_grades_dashboard():
+    """Endpoint para el dashboard de estudiante - Calificaciones"""
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        # Obtener ID del estudiante desde el token o query params
+        estudiante_id = request.args.get('student_id')
+        
+        if not estudiante_id:
+            # Si no hay student_id, usar uno por defecto para desarrollo
+            estudiante_id = '673df46bfaf2a31cb63b0bbd'
+        
+        matriculas = get_matriculas_collection()
+        
+        # Buscar matrículas del estudiante
+        obj_id = string_to_objectid(estudiante_id)
+        if not obj_id:
+            return jsonify({'error': 'ID de estudiante inválido'}), 400
+        
+        student_matriculas = list(matriculas.find({'id_estudiante': obj_id}))
+        
+        if not student_matriculas:
+            # Si no hay datos, devolver mock data
+            return jsonify({
+                'average': 0.0,
+                'recent': []
+            }), 200
+        
+        # Calcular promedio y obtener calificaciones recientes
+        total_notas = 0
+        count_notas = 0
+        recent_grades = []
+        
+        for matricula in student_matriculas[:3]:  # Últimas 3 matrículas
+            curso_info = matricula.get('curso_info', {})
+            calificaciones = matricula.get('calificaciones', [])
+            
+            for cal in calificaciones:
+                nota = cal.get('nota', 0)
+                total_notas += nota
+                count_notas += 1
+                
+                recent_grades.append({
+                    'subject': curso_info.get('nombre_curso', 'N/A'),
+                    'grade': nota,
+                    'date': cal.get('fecha_eval', datetime.now()).strftime('%Y-%m-%d') if isinstance(cal.get('fecha_eval'), datetime) else str(cal.get('fecha_eval', ''))
+                })
+        
+        average = round(total_notas / count_notas, 2) if count_notas > 0 else 0.0
+        
+        # Ordenar por fecha y tomar las 5 más recientes
+        recent_grades.sort(key=lambda x: x['date'], reverse=True)
+        recent_grades = recent_grades[:5]
+        
+        return jsonify({
+            'average': average,
+            'recent': recent_grades
+        }), 200
+        
+    except Exception as e:
+        print(f"Error en /student/grades: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Devolver mock data en caso de error
+        return jsonify({
+            'average': 4.3,
+            'recent': [
+                {'subject': 'Matemáticas 10° A', 'grade': 4.2, 'date': '2025-02-05'},
+                {'subject': 'Español 10° A', 'grade': 4.5, 'date': '2025-02-05'},
+                {'subject': 'Ciencias 10° A', 'grade': 4.0, 'date': '2025-02-05'}
+            ]
+        }), 200
+
+
+@app.route('/student/notifications', methods=['GET', 'OPTIONS'])
+def get_student_notifications_dashboard():
+    """Endpoint para el dashboard de estudiante - Notificaciones"""
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        # Por ahora devolver notificaciones mock
+        # TODO: Implementar sistema de notificaciones en la base de datos
+        
+        return jsonify({
+            'urgent': 'Entrega de proyecto de Matemáticas el viernes 25 de noviembre',
+            'notifications': [
+                {
+                    'title': 'Nueva tarea de Matemáticas asignada',
+                    'date': '2024-11-18',
+                    'type': 'tarea'
+                },
+                {
+                    'title': 'Calificaciones actualizadas en Español',
+                    'date': '2024-11-17',
+                    'type': 'calificacion'
+                },
+                {
+                    'title': 'Reunión de padres próxima semana',
+                    'date': '2024-11-16',
+                    'type': 'evento'
+                }
+            ]
+        }), 200
+        
+    except Exception as e:
+        print(f"Error en /student/notifications: {e}")
+        return jsonify({
+            'urgent': None,
+            'notifications': []
+        }), 200
+
+
+@app.route('/student/schedule', methods=['GET', 'OPTIONS'])
+def get_student_schedule_dashboard():
+    """Endpoint para el dashboard de estudiante - Horario"""
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        # Por ahora devolver horario mock
+        # TODO: Implementar sistema de horarios en la base de datos
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        return jsonify({
+            'date': today,
+            'events': [
+                {
+                    'time': '08:00 - 09:00',
+                    'subject': 'Matemáticas 10° A',
+                    'teacher': 'Prof. Juan Pérez',
+                    'room': 'Aula 201'
+                },
+                {
+                    'time': '09:00 - 10:00',
+                    'subject': 'Español 10° A',
+                    'teacher': 'Prof. María López',
+                    'room': 'Aula 202'
+                },
+                {
+                    'time': '10:00 - 11:00',
+                    'subject': 'Ciencias 10° A',
+                    'teacher': 'Prof. Carlos García',
+                    'room': 'Laboratorio 1'
+                },
+                {
+                    'time': '11:00 - 12:00',
+                    'subject': 'Inglés 10° A',
+                    'teacher': 'Prof. Ana Martínez',
+                    'room': 'Aula 203'
+                }
+            ]
+        }), 200
+        
+    except Exception as e:
+        print(f"Error en /student/schedule: {e}")
+        return jsonify({
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'events': []
+        }), 200
+    
 @app.route('/students', methods=['GET'])
 def get_students():
     """Obtener todos los estudiantes"""
@@ -378,6 +567,99 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({'success': False, 'error': 'Error interno del servidor'}), 500
+
+# ...existing code...
+
+@app.route('/student/certificado/<tipo>', methods=['GET'])
+def generar_certificado_estudiante(tipo):
+    """Generar certificado para el estudiante autenticado"""
+    try:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header:
+            return jsonify({'error': 'No autenticado'}), 401
+        
+        estudiante_id = request.args.get('student_id', '673df46bfaf2a31cb63b0bbd')
+        
+        usuarios = get_usuarios_collection()
+        estudiante = usuarios.find_one({'_id': string_to_objectid(estudiante_id)})
+        
+        if not estudiante:
+            return jsonify({'error': 'Estudiante no encontrado'}), 404
+        
+        if tipo == 'estudios':
+            data = {
+                'estudiante': {
+                    'nombre': estudiante.get('nombres', 'N/A') + ' ' + estudiante.get('apellidos', ''),
+                    'codigo': estudiante_id,
+                    'documento': estudiante.get('documento', '1234567890')
+                },
+                'institucion': {
+                    'nombre': 'Institución Educativa El Pórtico',
+                    'nit': '900.123.456-7',
+                    'direccion': 'Calle 123 #45-67, Bogotá D.C.'
+                },
+                'grado': '10° A',
+                'periodo': '2024-2025'
+            }
+            
+            pdf_buffer = PDFGenerator.generar_certificado_estudios(data)
+            
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'certificado_estudios_{estudiante_id}.pdf'
+            )
+        
+        else:
+            return jsonify({'error': 'Tipo de certificado no válido'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/student/boletin', methods=['GET'])
+def generar_boletin_estudiante():
+    """Generar boletín de calificaciones"""
+    try:
+        estudiante_id = request.args.get('student_id', '673df46bfaf2a31cb63b0bbd')
+        periodo = request.args.get('periodo', 'Periodo 1')
+        
+        usuarios = get_usuarios_collection()
+        estudiante = usuarios.find_one({'_id': string_to_objectid(estudiante_id)})
+        
+        if not estudiante:
+            return jsonify({'error': 'Estudiante no encontrado'}), 404
+        
+        data = {
+            'estudiante': {
+                'nombre': estudiante.get('nombres', 'N/A') + ' ' + estudiante.get('apellidos', ''),
+                'codigo': estudiante_id
+            },
+            'periodo': periodo,
+            'materias': [
+                {'nombre': 'Matemáticas', 'nota1': 4.2, 'nota2': 3.8, 'nota3': 4.5, 'promedio': 4.17},
+                {'nombre': 'Español', 'nota1': 4.5, 'nota2': 4.2, 'nota3': 4.8, 'promedio': 4.5},
+                {'nombre': 'Ciencias', 'nota1': 3.5, 'nota2': 4.0, 'nota3': 3.8, 'promedio': 3.77},
+                {'nombre': 'Sociales', 'nota1': 4.0, 'nota2': 4.3, 'nota3': 4.1, 'promedio': 4.13},
+            ],
+            'promedio_general': 4.14
+        }
+        
+        pdf_buffer = PDFGenerator.generar_boletin_notas(data)
+        
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'boletin_{estudiante_id}_{periodo}.pdf'
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ...existing code...
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

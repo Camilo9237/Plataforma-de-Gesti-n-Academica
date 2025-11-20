@@ -10,7 +10,7 @@ import { Router } from '@angular/router';
   templateUrl: './admin.html',
   styleUrls: ['./admin.css']
 })
-export class AdminDashboard implements OnInit {
+export default class AdminComponent implements OnInit {  // ✅ Cambiar a 'export default'
   stats: any = null;
   pending: any = null;
   campuses: any[] = [];
@@ -20,8 +20,45 @@ export class AdminDashboard implements OnInit {
 
   constructor(private api: ApiService, private router: Router) {}
 
-  ngOnInit(): void {
-    this.loadAll();
+  ngOnInit() {
+    this.loadCampuses();
+    this.loadStatistics();
+    this.loadRecentActivity();
+  }
+
+  loadCampuses() {
+    this.api.getCampuses().subscribe({
+      next: (res: any) => this.campuses = res?.campuses || [],
+      error: () => this.campuses = []
+    });
+  }
+
+  loadStatistics() {
+    this.api.getAdminStats().subscribe({
+      next: (res: any) => this.stats = res,
+      error: (err: any) => { 
+        this.error = 'Error al cargar estadísticas'; 
+        console.error(err); 
+      }
+    });
+
+    this.api.getPendingTasks().subscribe({
+      next: (res: any) => this.pending = res,
+      error: (err: any) => { 
+        this.error = this.error || 'Error al cargar tareas'; 
+        console.error(err); 
+      }
+    });
+  }
+
+  loadRecentActivity() {
+    this.api.getRecentStats().subscribe({
+      next: (res: any) => this.recent = res,
+      error: (err: any) => { 
+        this.error = this.error || 'Error al cargar actividad reciente'; 
+        console.error(err); 
+      }
+    });
   }
 
   goToMatriculas() {
@@ -44,27 +81,10 @@ export class AdminDashboard implements OnInit {
     this.loading = true;
     this.error = null;
 
-    this.api.getAdminStats().subscribe({
-      next: (res) => this.stats = res,
-      error: (err) => { this.error = 'Error al cargar estadísticas'; console.error(err); }
-    });
-
-    this.api.getPendingTasks().subscribe({
-      next: (res) => this.pending = res,
-      error: (err) => { this.error = this.error || 'Error al cargar tareas'; console.error(err); }
-    });
-
-    this.api.getCampuses().subscribe({
-      next: (res) => this.campuses = res?.campuses || [],
-      error: (err) => { this.error = this.error || 'Error al cargar sedes'; console.error(err); }
-    });
-
-    this.api.getRecentStats().subscribe({
-      next: (res) => this.recent = res,
-      error: (err) => { this.error = this.error || 'Error al cargar estadísticas recientes'; console.error(err); }
-    });
+    this.loadStatistics();
+    this.loadCampuses();
+    this.loadRecentActivity();
 
     setTimeout(() => this.loading = false, 600);
   }
 }
- 

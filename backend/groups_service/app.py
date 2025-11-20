@@ -20,7 +20,19 @@ from database.db_config import (
 
 app = Flask(__name__)
 app.secret_key = "PlataformaColegios"
-CORS(app)
+
+# 🔧 CORS CONFIGURACIÓN COMPLETA
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:4200"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
+
+# ...existing code...
 
 keycloak_openid = KeycloakOpenID(
     server_url="http://localhost:8082",
@@ -549,4 +561,4 @@ def internal_error(error):
     return jsonify({'success': False, 'error': 'Error interno del servidor'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5003)
+    app.run(debug=True, host='0.0.0.0', port=5004)

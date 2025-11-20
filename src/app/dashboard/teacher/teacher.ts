@@ -10,7 +10,7 @@ import { ApiService } from '../../services/api.service';
   templateUrl: './teacher.html',
   styleUrls: ['./teacher.css']
 })
-export class TeacherDashboard implements OnInit {
+export default class TeacherComponent implements OnInit {  // ✅ Cambiar a 'export default'
   groups: any[] = [];
   pending: any = null;
   loading = false;
@@ -18,25 +18,14 @@ export class TeacherDashboard implements OnInit {
 
   constructor(private api: ApiService) {}
 
-  ngOnInit(): void {
-    this.loadAll();
+  ngOnInit() {
+    this.loadGroups();
   }
 
-  loadAll() {
-    this.loading = true;
-    this.error = null;
-
+  loadGroups() {
     this.api.getTeacherGroups().subscribe({
-      next: (res) => this.groups = res?.groups || [],
-      error: (err) => { this.error = 'Error al cargar grupos'; console.error(err); }
+      next: (res: any) => this.groups = res?.groups || [],
+      error: (err) => console.error('Error loading groups:', err)
     });
-
-    this.api.getTeacherPendingGrades().subscribe({
-      next: (res) => this.pending = res,
-      error: (err) => { this.error = this.error || 'Error al cargar calificaciones pendientes'; console.error(err); }
-    });
-
-    setTimeout(() => this.loading = false, 500);
   }
 }
-

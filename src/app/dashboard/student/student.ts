@@ -10,7 +10,7 @@ import { ApiService } from '../../services/api.service';
   templateUrl: './student.html',
   styleUrls: ['./student.css']
 })
-export class StudentDashboard implements OnInit {
+export default class StudentComponent implements OnInit {  // ✅ Cambiar a 'export default'
   grades: any = null;
   notifications: any = null;
   schedule: any = null;
@@ -19,30 +19,18 @@ export class StudentDashboard implements OnInit {
 
   constructor(private api: ApiService) {}
 
-  ngOnInit(): void {
-    this.loadAll();
-  }
-
-  loadAll() {
-    this.loading = true;
-    this.error = null;
-
+  ngOnInit() {
     this.api.getStudentGrades().subscribe({
-      next: (res) => this.grades = res,
-      error: (err) => { this.error = 'Error al cargar calificaciones'; console.error(err); }
+      next: (res: any) => this.grades = res,
+      error: (err: any) => { this.error = 'Error al cargar calificaciones'; console.error(err); }
     });
-
     this.api.getStudentNotifications().subscribe({
-      next: (res) => this.notifications = res,
-      error: (err) => { this.error = this.error || 'Error al cargar notificaciones'; console.error(err); }
+      next: (res: any) => this.notifications = res,
+      error: (err: any) => { this.error = this.error || 'Error al cargar notificaciones'; console.error(err); }
     });
-
     this.api.getStudentSchedule().subscribe({
-      next: (res) => this.schedule = res,
-      error: (err) => { this.error = this.error || 'Error al cargar horario'; console.error(err); }
+      next: (res: any) => this.schedule = res,
+      error: (err: any) => { this.error = this.error || 'Error al cargar horario'; console.error(err); }
     });
-
-    setTimeout(() => this.loading = false, 500);
   }
 }
- 

@@ -1,11 +1,14 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
-
+import datetime
+import json
 try:
     from keycloak import KeycloakOpenID
+    import jwt
 except Exception:
     KeycloakOpenID = None
+    jwt = None
 
 app = Flask(__name__)
 app.secret_key = os.getenv('APP_SECRET', 'plataforma_secret')
@@ -15,7 +18,7 @@ CORS(app)
 KEYCLOAK_SERVER = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8082')
 KEYCLOAK_CLIENT_ID = os.getenv('KEYCLOAK_CLIENT_ID', '01')
 KEYCLOAK_REALM = os.getenv('KEYCLOAK_REALM', 'plataformaInstitucional')
-KEYCLOAK_CLIENT_SECRET = os.getenv('KEYCLOAK_CLIENT_SECRET', '2m2KWH4lyYgh9CwoM1y2QI6bFrDjR3OV')
+KEYCLOAK_CLIENT_SECRET = os.getenv('KEYCLOAK_CLIENT_SECRET', 'wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz')
 
 keycloak_openid = None
 if KeycloakOpenID is not None:
@@ -53,9 +56,30 @@ def logout():
     return jsonify({'message': 'Sesión cerrada'}), 200
 
 
+def create_mock_jwt(username: str, role: str) -> str:
+    """Genera un JWT mock para desarrollo sin Keycloak"""
+    if jwt is None:
+        return f'mock_token_{username}'
+    
+    payload = {
+        'sub': username,
+        'role': role,
+        'username': username,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=8),
+        'iat': datetime.datetime.utcnow(),
+        'iss': 'mock-login-service',
+        'realm_access': {
+            'roles': [role]
+        }
+    }
+    
+    # Firmar con secret del app (en producción usar clave pública/privada)
+    token = jwt.encode(payload, app.secret_key, algorithm='HS256')
+    return token
+
+
 @app.route('/login', methods=['POST'])
 def login():
-    """Login: si Keycloak está configurado usa Keycloak, si no, usa autenticación mock para desarrollo."""
     data = request.get_json() or {}
     username = data.get('username')
     password = data.get('password')
@@ -63,85 +87,98 @@ def login():
     if not username or not password:
         return jsonify({'error': 'Faltan credenciales'}), 400
 
-    # Prefer Keycloak if available
     if keycloak_openid is not None:
         try:
             token = keycloak_openid.token(username, password)
             access = token.get('access_token')
-            # intentar decodificar token para obtener roles
-            try:
-                token_info = keycloak_openid.decode_token(access)
-            except Exception:
-                token_info = {}
+            
+            if jwt is None:
+                return jsonify({'error': "Server error: missing dependency 'PyJWT'. Run: pip install PyJWT"}), 500
 
-            # determinar rol preferente
+            # Decodificar token para obtener el rol
+            decoded = jwt.decode(access, options={"verify_signature": False})
+            
+            # 🔍 DEBUG: Ver estructura completa del token
+            print("=" * 80)
+            print("TOKEN DECODIFICADO COMPLETO:")
+            print(json.dumps(decoded, indent=2))
+            print("=" * 80)
+            
+            # Extraer rol del token (buscar en realm_access Y resource_access)
             role = None
-            realm_roles = token_info.get('realm_access', {}).get('roles', []) if token_info else []
-            if 'administrador' in realm_roles:
-                role = 'administrador'
-            elif 'docente' in realm_roles:
-                role = 'docente'
-            elif 'estudiante' in realm_roles:
-                role = 'estudiante'
-
-            # revisar roles por cliente
-            if not role:
-                for client_id, info in token_info.get('resource_access', {}).items() if token_info else []:
-                    client_roles = info.get('roles', [])
-                    if 'administrador' in client_roles:
-                        role = 'administrador'
+            
+            # 1. Buscar en realm roles (roles globales del realm)
+            if 'realm_access' in decoded and 'roles' in decoded['realm_access']:
+                realm_roles = decoded['realm_access']['roles']
+                print(f"Realm roles encontrados: {realm_roles}")
+                for r in ['administrador', 'docente', 'estudiante']:
+                    if r in realm_roles:
+                        role = r
                         break
-                    if 'docente' in client_roles:
-                        role = 'docente'
-                        break
-                    if 'estudiante' in client_roles:
-                        role = 'estudiante'
-                        break
+            
+            # 2. Si no se encuentra, buscar en client roles (roles específicos del cliente)
+            if not role and 'resource_access' in decoded:
+                print(f"Resource access keys: {list(decoded['resource_access'].keys())}")
+                
+                # Buscar en el cliente actual
+                if KEYCLOAK_CLIENT_ID in decoded['resource_access']:
+                    client_roles = decoded['resource_access'][KEYCLOAK_CLIENT_ID].get('roles', [])
+                    print(f"Client roles para '{KEYCLOAK_CLIENT_ID}': {client_roles}")
+                    for r in ['administrador', 'docente', 'estudiante']:
+                        if r in client_roles:
+                            role = r
+                            break
+                
+                # Si aún no se encuentra, buscar en todos los clientes
+                if not role:
+                    for client_id, client_data in decoded['resource_access'].items():
+                        client_roles = client_data.get('roles', [])
+                        print(f"Roles en cliente '{client_id}': {client_roles}")
+                        for r in ['administrador', 'docente', 'estudiante']:
+                            if r in client_roles:
+                                role = r
+                                break
+                        if role:
+                            break
 
-            # fallback si no se detecta
-            if not role:
-                role = 'estudiante'
-
+            print(f"Rol final detectado: {role}")
+            
             return jsonify({
                 'access_token': access,
                 'refresh_token': token.get('refresh_token'),
                 'expires_in': token.get('expires_in'),
-                'token_type': token.get('token_type'),
+                'token_type': 'Bearer',
                 'role': role
             }), 200
-        except Exception as e:
-            return jsonify({'error': 'credenciales invalidas o keycloak no disponible', 'detail': str(e)}), 401
 
-    # Mock fallback for development
-    # WARNING: esto es solo para desarrollo local
+        except Exception as e:
+            print(f"Error en login: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 401
+
     if username == 'admin' and password == 'admin':
+        mock_token = create_mock_jwt('admin', 'administrador')
         return jsonify({
-            'access_token': 'mock-access-token',
-            'refresh_token': 'mock-refresh-token',
-            'expires_in': 3600,
-            'token_type': 'bearer',
+            'access_token': mock_token,
             'role': 'administrador'
         }), 200
 
-    # simple dev rule: any username with password 'devpass' is allowed
     if password == 'devpass':
-        # asignar rol por convención de nombre
         role = 'estudiante'
-        if 'admin' in username.lower() or username.lower() == 'admin':
-            role = 'administrador'
-        elif 'teach' in username.lower() or 'doc' in username.lower():
+        if 'teacher' in username or 'profesor' in username:
             role = 'docente'
+        elif 'admin' in username:
+            role = 'administrador'
+
+        mock_token = create_mock_jwt(username, role)
         return jsonify({
-            'access_token': f'mock-token-for-{username}',
-            'refresh_token': 'mock-refresh-token',
-            'expires_in': 3600,
-            'token_type': 'bearer',
+            'access_token': mock_token,
             'role': role
         }), 200
 
-    return jsonify({'error': 'credenciales invalidas'}), 401
+    return jsonify({'error': 'Credenciales inválidas'}), 401
 
 
 if __name__ == '__main__':
-    # puerto 5000 según solicitud
     app.run(host='0.0.0.0', port=5000, debug=True)

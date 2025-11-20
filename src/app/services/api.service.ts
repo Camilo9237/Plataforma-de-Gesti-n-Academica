@@ -1,71 +1,143 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
+import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
-@Injectable({ providedIn: 'root' })
+@Injectable({
+  providedIn: 'root'
+})
 export class ApiService {
   constructor(private http: HttpClient) {}
 
-  login(payload: { username: string; password: string }) {
-    return this.http.post<any>(`${environment.api.login}/login`, payload);
+  // ===== AUTENTICACIÓN =====
+  login(credentials: { username: string; password: string }) {
+    return this.http.post(`${environment.api.login}/login`, credentials);
   }
 
-  getDashboard() {
-    return this.http.get<any>(`${environment.api.admin}/dashboard-general`);
-  }
-  getStudentsList() {
-    return this.http.get<any>(`${environment.api.students}/students`);
+  // ===== ESTUDIANTES =====
+  getStudents() {
+    return this.http.get(`${environment.api.students}/students`);
   }
 
-  getTeachersList() {
-    return this.http.get<any>(`${environment.api.teachers}/teachers`);
+  getStudent(id: string) {
+    return this.http.get(`${environment.api.students}/students/${id}`);
   }
 
-  getAdminOverview() {
-    return this.http.get<any>(`${environment.api.admin}/dashboard-general`);
+  createStudent(data: any) {
+    return this.http.post(`${environment.api.students}/students`, data);
   }
 
-  getAdminStats() {
-    return this.http.get<any>(`${environment.api.admin}/admin/stats`);
+  updateStudent(id: string, data: any) {
+    return this.http.put(`${environment.api.students}/students/${id}`, data);
   }
 
-  getPendingTasks() {
-    return this.http.get<any>(`${environment.api.admin}/admin/pending-tasks`);
+  deleteStudent(id: string) {
+    return this.http.delete(`${environment.api.students}/students/${id}`);
   }
 
-  getCampuses() {
-    return this.http.get<any>(`${environment.api.admin}/admin/campuses`);
-  }
-
-  getRecentStats() {
-    return this.http.get<any>(`${environment.api.admin}/admin/recent-stats`);
-  }
-
-  // Más métodos por servicio pueden añadirse aquí...
- 
-  /* Student endpoints */
   getStudentGrades() {
-    return this.http.get<any>(`${environment.api.students}/student/grades`);
+    return this.http.get(`${environment.api.students}/student/grades`);
   }
 
   getStudentNotifications() {
-    return this.http.get<any>(`${environment.api.students}/student/notifications`);
+    return this.http.get(`${environment.api.students}/student/notifications`);
   }
 
   getStudentSchedule() {
-    return this.http.get<any>(`${environment.api.students}/student/schedule-today`);
+    return this.http.get(`${environment.api.students}/student/schedule`);
   }
-  
-  /* Teacher endpoints */
+
+  // ===== PROFESORES =====
+  getTeachers() {
+    return this.http.get(`${environment.api.teachers}/teachers`);
+  }
+
+  getTeacher(id: string) {
+    return this.http.get(`${environment.api.teachers}/teachers/${id}`);
+  }
+
+  createTeacher(data: any) {
+    return this.http.post(`${environment.api.teachers}/teachers`, data);
+  }
+
+  updateTeacher(id: string, data: any) {
+    return this.http.put(`${environment.api.teachers}/teachers/${id}`, data);
+  }
+
+  deleteTeacher(id: string) {
+    return this.http.delete(`${environment.api.teachers}/teachers/${id}`);
+  }
+
   getTeacherGroups() {
-    return this.http.get<any>(`${environment.api.teachers}/teacher/groups`);
+    return this.http.get(`${environment.api.teachers}/teacher/groups`);
   }
 
   getTeacherPendingGrades() {
-    return this.http.get<any>(`${environment.api.teachers}/teacher/pending-grades`);
+    return this.http.get(`${environment.api.teachers}/teacher/pending-grades`);
   }
 
-  getTeacherOverview() {
-    return this.http.get<any>(`${environment.api.teachers}/teacher/overview`);
+  // ===== ADMINISTRADORES =====
+  getAdministrators() {
+    return this.http.get(`${environment.api.administrator}/administrators`);
+  }
+
+  getAdministrator(id: string) {
+    return this.http.get(`${environment.api.administrator}/administrators/${id}`);
+  }
+
+  createAdministrator(data: any) {
+    return this.http.post(`${environment.api.administrator}/administrators`, data);
+  }
+
+  updateAdministrator(id: string, data: any) {
+    return this.http.put(`${environment.api.administrator}/administrators/${id}`, data);
+  }
+
+  deleteAdministrator(id: string) {
+    return this.http.delete(`${environment.api.administrator}/administrators/${id}`);
+  }
+
+  getAdminStats() {
+    return this.http.get(`${environment.api.admin}/admin/stats`);
+  }
+
+  getPendingTasks() {
+    return this.http.get(`${environment.api.admin}/admin/pending-tasks`);
+  }
+
+  getCampuses() {
+    return this.http.get(`${environment.api.admin}/admin/campuses`);
+  }
+
+  getRecentStats() {
+    return this.http.get(`${environment.api.admin}/admin/recent-stats`);
+  }
+
+  // ===== REPORTES PDF =====
+  
+  /**
+   * Descarga certificado de estudios
+   * @param studentId ID del estudiante
+   * @param tipo Tipo de certificado: 'estudios', 'calificaciones', etc.
+   */
+  downloadCertificado(studentId: string, tipo: string): Observable<HttpResponse<Blob>> {
+    const url = `${environment.api.students}/student/certificado/${tipo}?student_id=${studentId}`;
+    return this.http.get(url, { 
+      responseType: 'blob',
+      observe: 'response' 
+    });
+  }
+
+  /**
+   * Descarga boletín de calificaciones en PDF
+   * @param studentId ID del estudiante
+   * @param periodo Periodo académico
+   */
+  downloadBoletin(studentId: string, periodo: string): Observable<HttpResponse<Blob>> {
+    const url = `${environment.api.students}/student/boletin?student_id=${studentId}&periodo=${periodo}`;
+    return this.http.get(url, { 
+      responseType: 'blob',
+      observe: 'response' 
+    });
   }
 }
