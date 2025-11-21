@@ -8,7 +8,7 @@ print("🌱 Insertando datos de prueba...");
 
 // ADMINISTRADORES
 const admin1 = db.usuarios.insertOne({
-  correo: "admin@colegio.edu",
+  correo: "admin1@colegio.edu.co",
   rol: "administrador",
   nombres: "Admin",
   apellidos: "Sistema",

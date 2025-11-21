@@ -7,6 +7,10 @@ export const routes: Routes = [
     path: 'login', 
     loadComponent: () => import('./authentication/login/login').then(m => m.default) 
   },
+  
+  // ==========================================
+  //   RUTAS DE ESTUDIANTE
+  // ==========================================
   {
     path: 'dashboard/student',
     loadComponent: () => import('./dashboard/student/student').then(m => m.default),
@@ -31,6 +35,10 @@ export const routes: Routes = [
     canActivate: [RoleGuard],
     data: { role: 'estudiante' }
   },
+  
+  // ==========================================
+  //   RUTAS DE DOCENTE
+  // ==========================================
   {
     path: 'dashboard/teacher',
     loadComponent: () => import('./dashboard/teacher/teacher').then(m => m.default),
@@ -38,7 +46,7 @@ export const routes: Routes = [
     data: { role: 'docente' }
   },
   {
-    path: 'dashboard/teacher/attendance',  // ✅ AGREGAR ESTA RUTA
+    path: 'dashboard/teacher/attendance',
     loadComponent: () => import('./dashboard/teacher/attendance/attendance').then(m => m.default),
     canActivate: [RoleGuard],
     data: { role: 'docente' }
@@ -49,24 +57,68 @@ export const routes: Routes = [
     canActivate: [RoleGuard],
     data: { role: 'docente'}
   },
-   {
+  {
     path: 'dashboard/teacher/grades',
     loadComponent: () => import('./dashboard/teacher/grades/grades').then(m => m.default),
     canActivate: [RoleGuard],
     data: { role: 'docente' }
   },
   {
+    path: 'dashboard/teacher/group/:id',
+    loadComponent: () => import('./dashboard/teacher/group-detail/group-detail').then(m => m.default),
+    canActivate: [RoleGuard],
+    data: { role: 'docente' }
+  },
+  
+  // ==========================================
+  //   RUTAS DE ADMINISTRADOR
+  // ==========================================
+  {
     path: 'dashboard/admin',
     loadComponent: () => import('./dashboard/admin/admin').then(m => m.default),
     canActivate: [RoleGuard],
     data: { role: 'administrador' }
   },
+   {
+    path: 'dashboard/admin/students/new',
+    loadComponent: () => import('./dashboard/admin/student-form/student-form').then(m => m.StudentFormComponent),
+    canActivate: [RoleGuard],
+    data: { role: 'administrador' }
+  },
   {
-  path: 'dashboard/teacher/group/:id',
-  loadComponent: () => import('./dashboard/teacher/group-detail/group-detail').then(m => m.default),
-  canActivate: [RoleGuard],
-  data: { role: 'docente' }
-},
+    path: 'dashboard/admin/students/:id/edit',
+    loadComponent: () => import('./dashboard/admin/student-form/student-form').then(m => m.StudentFormComponent),
+    canActivate: [RoleGuard],
+    data: { role: 'administrador' }
+  },
+  {
+    path: 'dashboard/admin/courses/new',
+    loadComponent: () => import('./dashboard/admin/course-form/course-form').then(m => m.CourseFormComponent),
+    canActivate: [RoleGuard],
+    data: { role: 'administrador' }
+  },
+  {
+    path: 'dashboard/admin/courses/:id/edit',
+    loadComponent: () => import('./dashboard/admin/course-form/course-form').then(m => m.CourseFormComponent),
+    canActivate: [RoleGuard],
+    data: { role: 'administrador' }
+  },
+  {
+    path: 'dashboard/admin/enrollments/new',
+    loadComponent: () => import('./dashboard/admin/enrollment-form/enrollment-form').then(m => m.EnrollmentFormComponent),
+    canActivate: [RoleGuard],
+    data: { role: 'administrador' }
+  },
+  {
+    path: 'dashboard/admin/reports',
+    loadComponent: () => import('./dashboard/admin/reports/reports').then(m => m.ReportsComponent),
+    canActivate: [RoleGuard],
+    data: { role: 'administrador' }
+  },
+  
+  // ==========================================
+  //   OTRAS RUTAS
+  // ==========================================
   {
     path: 'unauthorized',
     loadComponent: () => import('./authentication/unauthorized/unauthorized').then(m => m.default)
