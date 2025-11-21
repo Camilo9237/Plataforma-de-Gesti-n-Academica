@@ -46,95 +46,126 @@ def handle_preflight():
         response.headers.update(headers)
         return response
 
-keycloak_openid = KeycloakOpenID(
-    server_url="http://localhost:8082",
-    client_id="01",
-    realm_name="plataformaInstitucional",
-    client_secret_key="wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz"
-)
+# Keycloak config
+KEYCLOAK_SERVER = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8082')
+KEYCLOAK_CLIENT_ID = os.getenv('KEYCLOAK_CLIENT_ID', '01')
+KEYCLOAK_REALM = os.getenv('KEYCLOAK_REALM', 'plataformaInstitucional')
+KEYCLOAK_CLIENT_SECRET = os.getenv('KEYCLOAK_CLIENT_SECRET', 'wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz')
+
+keycloak_openid = None
+if KeycloakOpenID is not None:
+    try:
+        keycloak_openid = KeycloakOpenID(
+            server_url=KEYCLOAK_SERVER,
+            client_id=KEYCLOAK_CLIENT_ID,
+            realm_name=KEYCLOAK_REALM,
+            client_secret_key=KEYCLOAK_CLIENT_SECRET
+        )
+    except Exception:
+        keycloak_openid = None
+
 
 def tiene_rol(token_info, cliente_id, rol_requerido):
+    """Comprueba si los claims del token contienen el rol requerido.
+
+    Busca tanto en realm_access como en resource_access[cliente_id].
+    """
     try:
-        # Revisar roles a nivel de realm
-        realm_roles = token_info.get("realm_access", {}).get("roles", [])
+        # 1. Buscar en realm_access (roles globales del realm)
+        realm_roles = token_info.get('realm_access', {}).get('roles', [])
         if rol_requerido in realm_roles:
+            print(f"✓ Rol '{rol_requerido}' encontrado en realm_access")
             return True
-
-        # Revisar roles a nivel de cliente (resource_access)
-        resource_roles = token_info.get("resource_access", {}).get(cliente_id, {}).get("roles", [])
-        if rol_requerido in resource_roles:
-            return True
-
+        
+        # 2. Buscar en resource_access para el cliente específico
+        if cliente_id and cliente_id in token_info.get('resource_access', {}):
+            client_roles = token_info.get('resource_access', {}).get(cliente_id, {}).get('roles', [])
+            if rol_requerido in client_roles:
+                print(f"✓ Rol '{rol_requerido}' encontrado en resource_access[{cliente_id}]")
+                return True
+        
+        # 3. Buscar en TODOS los clientes (fallback)
+        resource_access = token_info.get('resource_access', {})
+        for client_id, client_data in resource_access.items():
+            client_roles = client_data.get('roles', [])
+            if rol_requerido in client_roles:
+                print(f"✓ Rol '{rol_requerido}' encontrado en resource_access[{client_id}]")
+                return True
+        
+        print(f"✗ Rol '{rol_requerido}' NO encontrado. Realm roles: {realm_roles}, Resource access: {list(resource_access.keys())}")
         return False
-    except Exception:
+        
+    except Exception as e:
+        print(f"Error al verificar rol: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
 
 def token_required(rol_requerido):
+    """Decorador que valida la presencia del token y del rol requerido."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            # Modo desarrollo: permitir token mock
+            if keycloak_openid is None:
+                auth = request.headers.get('Authorization', '')
+                if auth.startswith('Bearer mock-access-token') or auth.startswith('Bearer mock-token-for-admin'):
+                    g.userinfo = {'sub': 'admin', 'roles': ['administrador']}
+                    return f(*args, **kwargs)
+                return jsonify({'error': 'Keycloak no configurado'}), 500
+
             auth_header = request.headers.get('Authorization', None)
             if not auth_header:
-                print("❌ No se encontró header Authorization")
-                return jsonify({"error": "Token Requerido"}), 401
-            
+                print("✗ No se encontró header Authorization")
+                return jsonify({'error': 'Token Requerido'}), 401
+                
             try:
-                token = auth_header.split(" ")[1]
+                token = auth_header.split(' ')[1]
                 print(f"🔑 Token recibido: {token[:50]}...")
                 
-                # 🔧 MODO DESARROLLO: Aceptar tokens mock
-                if token.startswith('mock-token-') or token.startswith('eyJ'):
-                    # Para tokens mock de desarrollo
-                    if token.startswith('mock-token-'):
-                        print("⚠️ Usando token mock de desarrollo")
-                        g.userinfo = {'sub': 'dev-docente', 'roles': [rol_requerido]}
-                        return f(*args, **kwargs)
+                # Intentar decodificar con Keycloak (modo producción)
+                try:
+                    public_key_pem = f"-----BEGIN PUBLIC KEY-----\n{keycloak_openid.public_key()}\n-----END PUBLIC KEY-----"
                     
-                    # Para tokens JWT reales, intentar decodificar
-                    try:
-                        userinfo = keycloak_openid.decode_token(
+                    userinfo = keycloak_openid.decode_token(
                         token,
-                        key=keycloak_openid.public_key(),
+                        key=public_key_pem,
                         options={
                             "verify_signature": True,
                             "verify_aud": False,
                             "verify_exp": True
                         }
-                )
-                        print(f"✅ Token decodificado correctamente")
-                        print(f"   Usuario: {userinfo.get('preferred_username', 'N/A')}")
-                        print(f"   Roles: {userinfo.get('realm_access', {}).get('roles', [])}")
-                    except Exception as decode_error:
-                        print(f"⚠️ Error decodificando con Keycloak: {decode_error}")
-                        # Intentar decodificar sin verificar firma (solo para desarrollo)
-                        import jwt as pyjwt
-                        try:
-                            userinfo = pyjwt.decode(token, options={"verify_signature": False})
-                            print("⚠️ Token decodificado SIN verificar firma (modo desarrollo)")
-                        except Exception as jwt_error:
-                            print(f"❌ Error decodificando JWT: {jwt_error}")
-                            return jsonify({"error": "Token inválido o expirado"}), 401
-                else:
-                    userinfo = keycloak_openid.decode_token(token)
+                    )
+                    print(f"✅ Token decodificado con Keycloak")
+                    print(f"   Usuario: {userinfo.get('preferred_username', 'N/A')}")
+                    print(f"   Email: {userinfo.get('email', 'N/A')}")
+                    
+                except Exception as decode_error:
+                    print(f"⚠️ Error decodificando con Keycloak: {decode_error}")
+                    # Fallback: decodificar sin verificar firma
+                    userinfo = pyjwt.decode(token, options={"verify_signature": False})
+                    print("⚠️ Token decodificado SIN verificar firma (modo desarrollo)")
                 
-            except IndexError:
-                print("❌ Formato de Authorization header inválido")
-                return jsonify({"error": "Formato de token inválido"}), 401
+            except pyjwt.ExpiredSignatureError:
+                print("✗ Token expirado")
+                return jsonify({'error': 'Token expirado'}), 401
+            except pyjwt.InvalidTokenError as e:
+                print(f"✗ Token inválido: {e}")
+                return jsonify({'error': 'Token inválido'}), 401
             except Exception as e:
-                print(f"❌ Error procesando token: {e}")
+                print(f"✗ Error al decodificar token: {e}")
                 import traceback
                 traceback.print_exc()
-                return jsonify({"error": "Token inválido o expirado"}), 401
-            
-            # Verificar rol
-            if not tiene_rol(userinfo, keycloak_openid.client_id, rol_requerido):
-                print(f"❌ Acceso denegado: se requiere rol '{rol_requerido}'")
-                print(f"   Roles encontrados: {userinfo.get('realm_access', {}).get('roles', [])}")
-                return jsonify({"error": f"Acceso denegado: se requiere el rol '{rol_requerido}'"}), 403
-            
-            print(f"✅ Acceso permitido para rol '{rol_requerido}'")
+                return jsonify({'error': 'Token inválido o expirado'}), 401
+                
+            if not tiene_rol(userinfo, KEYCLOAK_CLIENT_ID, rol_requerido):
+                print(f"✗ Acceso denegado: se requiere rol '{rol_requerido}'")
+                return jsonify({'error': f"Acceso denegado: se requiere el rol '{rol_requerido}'"}), 403
+
             g.userinfo = userinfo
             return f(*args, **kwargs)
+        
         return decorated
     return decorator
 

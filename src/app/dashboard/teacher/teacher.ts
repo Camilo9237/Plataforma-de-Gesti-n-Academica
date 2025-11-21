@@ -30,12 +30,27 @@ export default class TeacherComponent implements OnInit {  // ✅ Cambiar a 'exp
     });
   }
 
-  logout(): void {
-    if (confirm('¿Está seguro que desea cerrar sesión?')) {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user_role');
-      localStorage.removeItem('userInfo');
-      this.router.navigate(['/login']);
+  async logout(): Promise<void> {
+      const confirmed = await this.alertService.confirm({
+        title: '¿Cerrar Sesión?',
+        message: '¿Está seguro que desea cerrar su sesión actual?',
+        confirmText: 'Sí, cerrar sesión',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      });
+  
+      if (confirmed) {
+        // Limpiar localStorage
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('userInfo');
+        
+        this.alertService.success('Sesión cerrada exitosamente', '👋 Hasta pronto');
+        
+        // Redirigir al login
+        setTimeout(() => {
+          this.router.navigate(['/login']);
+        }, 1000);
+      }
     }
-  }
 }
