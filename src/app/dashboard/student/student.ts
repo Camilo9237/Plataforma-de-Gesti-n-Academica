@@ -10,27 +10,96 @@ import { ApiService } from '../../services/api.service';
   templateUrl: './student.html',
   styleUrls: ['./student.css']
 })
-export default class StudentComponent implements OnInit {  // ✅ Cambiar a 'export default'
+export default class StudentComponent implements OnInit {
   grades: any = null;
   notifications: any = null;
   schedule: any = null;
+  profile: any = null;
+  courses: any[] = [];
   loading = false;
   error: string | null = null;
 
   constructor(private api: ApiService) {}
 
   ngOnInit() {
+    this.loadAll();
+  }
+
+  loadAll() {
+    this.loading = true;
+    
+    // Cargar calificaciones
     this.api.getStudentGrades().subscribe({
-      next: (res: any) => this.grades = res,
-      error: (err: any) => { this.error = 'Error al cargar calificaciones'; console.error(err); }
+      next: (res: any) => {
+        console.log('✅ Calificaciones cargadas:', res);
+        this.grades = res;
+      },
+      error: (err: any) => {
+        console.error('❌ Error cargando calificaciones:', err);
+        this.error = 'Error al cargar calificaciones';
+      }
     });
+
+    // Cargar notificaciones
     this.api.getStudentNotifications().subscribe({
-      next: (res: any) => this.notifications = res,
-      error: (err: any) => { this.error = this.error || 'Error al cargar notificaciones'; console.error(err); }
+      next: (res: any) => {
+        console.log('✅ Notificaciones cargadas:', res);
+        this.notifications = res;
+      },
+      error: (err: any) => {
+        console.error('❌ Error cargando notificaciones:', err);
+      }
     });
+
+    // Cargar horario
     this.api.getStudentSchedule().subscribe({
-      next: (res: any) => this.schedule = res,
-      error: (err: any) => { this.error = this.error || 'Error al cargar horario'; console.error(err); }
+      next: (res: any) => {
+        console.log('✅ Horario cargado:', res);
+        this.schedule = res;
+      },
+      error: (err: any) => {
+        console.error('❌ Error cargando horario:', err);
+      }
     });
+
+    // Cargar perfil
+    this.api.getStudentProfile().subscribe({
+      next: (res: any) => {
+        if (res.success) {
+          console.log('✅ Perfil cargado:', res.profile);
+          this.profile = res.profile;
+        }
+      },
+      error: (err: any) => {
+        console.error('❌ Error cargando perfil:', err);
+      }
+    });
+
+    // Cargar cursos
+    this.api.getStudentCourses().subscribe({
+      next: (res: any) => {
+        if (res.success) {
+          console.log('✅ Cursos cargados:', res.courses);
+          this.courses = res.courses;
+        }
+        this.loading = false;
+      },
+      error: (err: any) => {
+        console.error('❌ Error cargando cursos:', err);
+        this.loading = false;
+      }
+    });
+  }
+
+  getStudentName(): string {
+    if (this.profile) {
+      return `${this.profile.nombres} ${this.profile.apellidos}`;
+    }
+    return 'Estudiante';
+  }
+
+  getAveragePercentage(): number {
+    const average = this.grades?.average || 0;
+    return (average / 5) * 100;
   }
 }

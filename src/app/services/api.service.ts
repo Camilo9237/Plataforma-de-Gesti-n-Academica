@@ -229,6 +229,34 @@ getStudentObservations(studentId: string): Observable<any> {
   return this.http.get(`${environment.api.teachers}/teacher/observations/student/${studentId}`);
 }
 
+// ===== ESTUDIANTE - DASHBOARD =====
+getStudentProfile(): Observable<any> {
+  return this.http.get(`${environment.api.students}/student/profile`);
+}
+
+getStudentCourses(): Observable<any> {
+  return this.http.get(`${environment.api.students}/student/courses`);
+}
+
+// getStudentTasks(): Observable<any> {
+//   return this.http.get(`${environment.api.students}/student/tasks`);
+// }
+
+downloadCertificado(tipo: string): Observable<HttpResponse<Blob>> {
+  return this.http.get(`${environment.api.students}/student/certificado/${tipo}`, {
+    responseType: 'blob',
+    observe: 'response'
+  });
+}
+
+downloadBoletin(periodo: string): Observable<HttpResponse<Blob>> {
+  return this.http.get(`${environment.api.students}/student/boletin`, {
+    params: { periodo },
+    responseType: 'blob',
+    observe: 'response'
+  });
+}
+
   /**
    * Descarga boletín de calificaciones en PDF
    * @param studentId ID del estudiante

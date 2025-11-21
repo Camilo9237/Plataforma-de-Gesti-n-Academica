@@ -14,6 +14,24 @@ export const routes: Routes = [
     data: { role: 'estudiante' }
   },
   {
+    path: 'dashboard/student/boletines',
+    loadComponent: () => import('./dashboard/student/boletines/boletines').then(m => m.default),
+    canActivate: [RoleGuard],
+    data: { role: 'estudiante' }
+  },
+  {
+    path: 'dashboard/student/horario',
+    loadComponent: () => import('./dashboard/student/horario/horario').then(m => m.default),
+    canActivate: [RoleGuard],
+    data: { role: 'estudiante' }
+  },
+  {
+    path: 'dashboard/student/certificados',
+    loadComponent: () => import('./dashboard/student/certificados/certificados').then(m => m.default),
+    canActivate: [RoleGuard],
+    data: { role: 'estudiante' }
+  },
+  {
     path: 'dashboard/teacher',
     loadComponent: () => import('./dashboard/teacher/teacher').then(m => m.default),
     canActivate: [RoleGuard],

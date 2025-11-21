@@ -17,7 +17,7 @@
       </div>
 
       <div class="progress">
-        <div class="progress-fill" [style.width.%]="(grades?.average || 0) / 5 * 100"></div>
+        <div class="progress-fill" [style.width.%]="getAveragePercentage()"></div>
       </div>
 
       <div class="grade-list">
@@ -44,7 +44,7 @@
         </div>
       </div>
 
-      <button class="view-btn">Ver Boletines</button>
+      <button class="view-btn" routerLink="/dashboard/student/boletines">Ver Boletines</button>
     </aside>
   </div>
 
@@ -63,6 +63,7 @@
     </div>
   </section>
 
+  <!-- ✅ ACCIONES RÁPIDAS SIN TAREAS -->
   <div class="quick-actions">
     <a class="action" routerLink="/dashboard/student/boletines"> 
       <div class="icon">📄</div>
@@ -72,12 +73,8 @@
       <div class="icon">📅</div>
       <div class="label">Horarios</div>
     </a>
-    <a class="action" routerLink="/dashboard/student/tareas">
-      <div class="icon">📚</div>
-      <div class="label">Tareas</div>
-    </a>
     <a class="action" routerLink="/dashboard/student/certificados">
-      <div class="icon">⬇️</div>
+      <div class="icon">📜</div>
       <div class="label">Certificados</div>
     </a>
   </div>
