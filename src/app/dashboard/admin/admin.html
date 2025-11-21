@@ -1,10 +1,18 @@
 <div class="admin-dashboard">
   <!-- Header -->
   <header class="dashboard-header">
-    <h1>Panel de Administración</h1>
-    <div class="user-info">
-      <span class="material-icons">admin_panel_settings</span>
-      <span>{{ adminName }}</span>
+    <div class="header-content">
+      <div class="header-left">
+        <h1>Panel de Administración</h1>
+        <div class="user-info">
+          <span class="material-icons">admin_panel_settings</span>
+          <span>{{ adminName }}</span>
+        </div>
+      </div>
+      <button class="btn-logout" (click)="logout()">
+        <span class="material-icons">logout</span>
+        Cerrar Sesión
+      </button>
     </div>
   </header>
 

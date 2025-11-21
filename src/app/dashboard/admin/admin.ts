@@ -263,4 +263,12 @@ export default class AdminComponent implements OnInit {
       }
     });
   }
+  logout(): void {
+  if (confirm('¿Está seguro que desea cerrar sesión?')) {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('userInfo');
+    this.router.navigate(['/login']);
+  }
+}
 }

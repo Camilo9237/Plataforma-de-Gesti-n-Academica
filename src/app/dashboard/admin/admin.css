@@ -17,8 +17,14 @@
   box-shadow: 0 4px 6px rgba(11, 107, 58, 0.2);
 }
 
-.dashboard-header h1 {
-  margin: 0;
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-left h1 {
+  margin: 0 0 10px;
   font-size: 28px;
   font-weight: 700;
 }
@@ -33,6 +39,51 @@
 
 .user-info .material-icons {
   font-size: 32px;
+}
+
+/* ==========================================
+   BOTÓN LOGOUT
+========================================== */
+.btn-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-logout:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.btn-logout .material-icons {
+  font-size: 20px;
+}
+
+/* ==========================================
+   RESPONSIVE
+========================================== */
+@media (max-width: 768px) {
+  .header-content {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+
+  .btn-logout {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* ==========================================

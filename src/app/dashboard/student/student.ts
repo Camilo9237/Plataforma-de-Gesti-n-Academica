@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { Router } from '@angular/router';
 
 @Component({
   selector: 'app-dashboard-student',
@@ -19,7 +20,7 @@ export default class StudentComponent implements OnInit {
   loading = false;
   error: string | null = null;
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private router: Router) {}
 
   ngOnInit() {
     this.loadAll();
@@ -101,5 +102,17 @@ export default class StudentComponent implements OnInit {
   getAveragePercentage(): number {
     const average = this.grades?.average || 0;
     return (average / 5) * 100;
+  }
+
+  logout(): void {
+    if (confirm('¿Está seguro que desea cerrar sesión?')) {
+      // Limpiar localStorage
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user_role');
+      localStorage.removeItem('userInfo');
+      
+      // Redirigir al login
+      this.router.navigate(['/login']);
+    }
   }
 }

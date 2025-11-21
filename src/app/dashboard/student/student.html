@@ -1,8 +1,15 @@
 <div class="student-dashboard">
+  <!-- ✅ HEADER ACTUALIZADO -->
   <header class="page-header">
-    <div>
-      <h1>Panel Estudiante</h1>
-      <p class="hint">Consulta tus calificaciones y horarios</p>
+    <div class="header-content">
+      <div class="header-left">
+        <h1>Dashboard del Estudiante</h1>
+        <p class="hint">Bienvenido {{ profile?.nombres }} {{ profile?.apellidos }}</p>
+      </div>
+      <button class="btn-logout" (click)="logout()">
+        <span class="material-icons">logout</span>
+        Cerrar Sesión
+      </button>
     </div>
   </header>
 
