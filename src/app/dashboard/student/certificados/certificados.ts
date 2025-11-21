@@ -1,62 +1,126 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ApiService } from '../../../services/api.service';
 import { HttpResponse } from '@angular/common/http';
+
+interface Certificado {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  icon: string;
+  disponible: boolean;
+}
 
 @Component({
   selector: 'app-certificados',
   standalone: true,
   imports: [CommonModule, RouterModule],
   templateUrl: './certificados.html',
-  styleUrls: ['./certificados.css'],
+  styleUrls: ['./certificados.css']
 })
-export default class CertificadosComponent {
-  tipos = [
-    { id: 'estudio', nombre: 'Certificado de Estudios', descripcion: 'Certifica los estudios cursados' },
-    { id: 'calificaciones', nombre: 'Certificado de Calificaciones', descripcion: 'Detalle de calificaciones por periodo' },
-    { id: 'comportamiento', nombre: 'Certificado de Conducta', descripcion: 'Registro de conducta y observaciones' },
-    { id: 'notas', nombre: 'Certificado de Notas Históricas', descripcion: 'Histórico de notas por asignatura' },
-    { id: 'otros', nombre: 'Certificado de Asistencia', descripcion: 'Registro de asistencia por periodo' },
-  ];
-
-  misCertificados = [
-    { id: 1, tipo: 'Certificado de Estudios', fecha: '2024-11-10', formato: 'PDF', descargable: true },
-    { id: 2, tipo: 'Certificado de Calificaciones', fecha: '2024-10-25', formato: 'PDF', descargable: true },
-  ];
-
+export default class CertificadosComponent implements OnInit {
+  certificados: Certificado[] = [];
   loading = false;
+  loadingCertificado: string | null = null;
+  error: string | null = null;
+  successMessage: string | null = null;
+  profile: any = null;
 
   constructor(private api: ApiService) {}
 
-  solicitar(tipo: any) {
-    this.loading = true;
-    const studentId = '673df46bfaf2a31cb63b0bbd'; // Mock - obtener del token en producción
-    
-    this.api.downloadCertificado(studentId, 'estudios').subscribe({
-      next: (response: HttpResponse<Blob>) => {
-        this.loading = false;
-        const blob = response.body;
-        if (blob) {
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `certificado_${tipo.id}_${new Date().getTime()}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          window.URL.revokeObjectURL(url);
+  ngOnInit() {
+    this.cargarDatos();
+    this.inicializarCertificados();
+  }
+
+  cargarDatos() {
+    this.api.getStudentProfile().subscribe({
+      next: (res: any) => {
+        if (res.success) {
+          this.profile = res.profile;
         }
       },
       error: (err: any) => {
-        this.loading = false;
-        console.error('Error al descargar certificado:', err);
-        alert('Error al generar el certificado. Intenta nuevamente.');
+        console.error('Error cargando perfil:', err);
       }
     });
   }
 
-  descargar(c: any) {
-    alert(`Funcionalidad de histórico en desarrollo: ${c.tipo}`);
+  inicializarCertificados() {
+    this.certificados = [
+      {
+        id: 'estudio',
+        nombre: 'Certificado de Estudio',
+        descripcion: 'Certifica que el estudiante está matriculado actualmente en la institución',
+        icon: '📄',
+        disponible: true
+      },
+      {
+        id: 'notas',
+        nombre: 'Certificado de Notas',
+        descripcion: 'Documento oficial con el historial académico completo del estudiante',
+        icon: '📊',
+        disponible: true
+      },
+      {
+        id: 'conducta',
+        nombre: 'Certificado de Conducta',
+        descripcion: 'Certifica el comportamiento y disciplina del estudiante',
+        icon: '⭐',
+        disponible: true
+      },
+      {
+        id: 'asistencia',
+        nombre: 'Certificado de Asistencia',
+        descripcion: 'Documento que certifica el porcentaje de asistencia a clases',
+        icon: '✅',
+        disponible: true
+      }
+    ];
+  }
+
+  descargarCertificado(tipo: string) {
+    this.loadingCertificado = tipo;
+    this.error = null;
+    this.successMessage = null;
+
+    console.log(`📥 Descargando certificado tipo: ${tipo}...`);
+
+    this.api.downloadCertificado(tipo).subscribe({
+      next: (response: HttpResponse<Blob>) => {
+        this.loadingCertificado = null;
+        const blob = response.body;
+        
+        if (blob) {
+          // Crear URL temporal del blob
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `certificado_${tipo}_${new Date().getTime()}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+
+          this.successMessage = `✅ Certificado de ${this.getNombreCertificado(tipo)} descargado exitosamente`;
+          setTimeout(() => this.successMessage = null, 3000);
+        }
+      },
+      error: (err: any) => {
+        this.loadingCertificado = null;
+        console.error('❌ Error al descargar certificado:', err);
+        this.error = err.error?.error || 'Error al generar el certificado. Intenta nuevamente.';
+      }
+    });
+  }
+
+  getNombreCertificado(tipo: string): string {
+    const cert = this.certificados.find(c => c.id === tipo);
+    return cert ? cert.nombre : tipo;
+  }
+
+  isLoading(tipo: string): boolean {
+    return this.loadingCertificado === tipo;
   }
 }

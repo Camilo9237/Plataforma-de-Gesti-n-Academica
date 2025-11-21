@@ -49,8 +49,8 @@ def handle_preflight():
 keycloak_openid = KeycloakOpenID(
     server_url="http://localhost:8082",
     client_id="01",
-    realm_name="platamaformaInstitucional",
-    client_secret_key="2m2KWH4lyYgh9CwoM1y2QI6bFrDjR3OV"
+    realm_name="plataformaInstitucional",
+    client_secret_key="wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz"
 )
 
 def tiene_rol(token_info, cliente_id, rol_requerido):

@@ -184,23 +184,31 @@ export class ApiService {
   getRecentStats() {
     return this.http.get(`${environment.api.admin}/admin/recent-stats`);
   }
+// ===== REPORTES PDF =====
 
-  // ===== REPORTES PDF =====
+/**
+ * Descarga certificado de estudios
+ * @param tipo Tipo de certificado: 'estudios', 'calificaciones', etc.
+ */
+downloadCertificado(tipo: string): Observable<HttpResponse<Blob>> {
+  const url = `${environment.api.students}/student/certificado/${tipo}`;
+  return this.http.get(url, {
+    responseType: 'blob',
+    observe: 'response'
+  });
+}
 
-  /**
-   * Descarga certificado de estudios
-   * @param studentId ID del estudiante
-   * @param tipo Tipo de certificado: 'estudios', 'calificaciones', etc.
-   */
-  downloadCertificado(studentId: string, tipo: string): Observable<HttpResponse<Blob>> {
-    const url = `${environment.api.students}/student/certificado/${tipo}?student_id=${studentId}`;
-    return this.http.get(url, {
-      responseType: 'blob',
-      observe: 'response'
-    });
-  }
-  // Agregar estos métodos después de los métodos de asistencia:
-
+/**
+ * Descarga boletín de calificaciones en PDF
+ * @param periodo Periodo académico
+ */
+downloadBoletin(periodo: string): Observable<HttpResponse<Blob>> {
+  const url = `${environment.api.students}/student/boletin?periodo=${periodo}`;
+  return this.http.get(url, {
+    responseType: 'blob',
+    observe: 'response'
+  });
+}
 // ===== OBSERVACIONES =====
 getObservations(filters?: { course_id?: string; tipo?: string; categoria?: string; student_id?: string }): Observable<any> {
   const params: any = {};
@@ -242,31 +250,6 @@ getStudentCourses(): Observable<any> {
 //   return this.http.get(`${environment.api.students}/student/tasks`);
 // }
 
-downloadCertificado(tipo: string): Observable<HttpResponse<Blob>> {
-  return this.http.get(`${environment.api.students}/student/certificado/${tipo}`, {
-    responseType: 'blob',
-    observe: 'response'
-  });
-}
 
-downloadBoletin(periodo: string): Observable<HttpResponse<Blob>> {
-  return this.http.get(`${environment.api.students}/student/boletin`, {
-    params: { periodo },
-    responseType: 'blob',
-    observe: 'response'
-  });
-}
-
-  /**
-   * Descarga boletín de calificaciones en PDF
-   * @param studentId ID del estudiante
-   * @param periodo Periodo académico
-   */
-  downloadBoletin(studentId: string, periodo: string): Observable<HttpResponse<Blob>> {
-    const url = `${environment.api.students}/student/boletin?student_id=${studentId}&periodo=${periodo}`;
-    return this.http.get(url, {
-      responseType: 'blob',
-      observe: 'response'
-    });
-  }
+  
 }

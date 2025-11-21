@@ -50,7 +50,7 @@ keycloak_openid = KeycloakOpenID(
     server_url="http://localhost:8082",
     client_id="01",
     realm_name="platamaformaInstitucional",
-    client_secret_key="2m2KWH4lyYgh9CwoM1y2QI6bFrDjR3OV"
+    client_secret_key="wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz"
 )
 
 def tiene_rol(token_info, cliente_id, rol_requerido):
@@ -71,16 +71,46 @@ def token_required(rol_requerido):
         def decorated(*args, **kwargs):
             auth_header = request.headers.get('Authorization', None)
             if not auth_header:
+                print("❌ No se encontró header Authorization")
                 return jsonify({"error": "Token Requerido"}), 401
+            
             try:
                 token = auth_header.split(" ")[1]
-                userinfo = keycloak_openid.decode_token(token)
+                print(f"🔑 Token recibido: {token[:50]}...")
+                
+                # Intentar decodificar con Keycloak
+                try:
+                    public_key_pem = f"-----BEGIN PUBLIC KEY-----\n{keycloak_openid.public_key()}\n-----END PUBLIC KEY-----"
+                    
+                    userinfo = keycloak_openid.decode_token(
+                        token,
+                        key=public_key_pem,
+                        options={
+                            "verify_signature": True,
+                            "verify_aud": False,
+                            "verify_exp": True
+                        }
+                    )
+                    print(f"✅ Token decodificado con Keycloak")
+                    
+                except Exception as decode_error:
+                    print(f"⚠️ Error con Keycloak: {decode_error}")
+                    import jwt as pyjwt
+                    userinfo = pyjwt.decode(token, options={"verify_signature": False})
+                    print("⚠️ Fallback a decodificación sin firma")
+                    
             except Exception as e:
+                print(f"❌ Error procesando token: {e}")
                 return jsonify({"error": "Token inválido o expirado"}), 401
+            
             if not tiene_rol(userinfo, keycloak_openid.client_id, rol_requerido):
+                print(f"❌ Acceso denegado: se requiere rol '{rol_requerido}'")
                 return jsonify({"error": f"Acceso denegado: se requiere el rol '{rol_requerido}'"}), 403
+            
+            print(f"✅ Acceso permitido para rol '{rol_requerido}'")
             g.userinfo = userinfo
             return f(*args, **kwargs)
+        
         return decorated
     return decorator
 

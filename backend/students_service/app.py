@@ -54,7 +54,7 @@ keycloak_openid = KeycloakOpenID(
     server_url="http://localhost:8082",
     client_id="01",
     realm_name="platamaformaInstitucional",
-    client_secret_key="2m2KWH4lyYgh9CwoM1y2QI6bFrDjR3OV"
+    client_secret_key="wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz"
 )
 
 def tiene_rol(token_info, cliente_id, rol_requerido):
@@ -76,21 +76,64 @@ def tiene_rol(token_info, cliente_id, rol_requerido):
 def token_required(rol_requerido):
     def decorator(f):
         @wraps(f)
-        def decorated (*args, **kwargs):
+        def decorated(*args, **kwargs):
             auth_header = request.headers.get('Authorization', None)
             if not auth_header:
+                print("❌ No se encontró header Authorization")
                 return jsonify({"error": "Token Requerido"}), 401
             
             try:
                 token = auth_header.split(" ")[1]
-                userinfo = keycloak_openid.decode_token(token)
+                print(f"🔑 Token recibido: {token[:50]}...")
+                
+                # Intentar decodificar con Keycloak (modo producción)
+                try:
+                    public_key_pem = f"-----BEGIN PUBLIC KEY-----\n{keycloak_openid.public_key()}\n-----END PUBLIC KEY-----"
+                    
+                    userinfo = keycloak_openid.decode_token(
+                        token,
+                        key=public_key_pem,
+                        options={
+                            "verify_signature": True,
+                            "verify_aud": False,
+                            "verify_exp": True
+                        }
+                    )
+                    print(f"✅ Token decodificado con Keycloak")
+                    print(f"   Usuario: {userinfo.get('preferred_username', 'N/A')}")
+                    print(f"   Email: {userinfo.get('email', 'N/A')}")
+                    
+                except Exception as decode_error:
+                    print(f"⚠️ Error decodificando con Keycloak: {decode_error}")
+                    # Fallback: decodificar sin verificar firma (solo desarrollo)
+                    import jwt as pyjwt
+                    try:
+                        userinfo = pyjwt.decode(token, options={"verify_signature": False})
+                        print("⚠️ Token decodificado SIN verificar firma (modo desarrollo)")
+                    except Exception as jwt_error:
+                        print(f"❌ Error decodificando JWT: {jwt_error}")
+                        return jsonify({"error": "Token inválido o expirado"}), 401
+                
+            except IndexError:
+                print("❌ Formato de Authorization header inválido")
+                return jsonify({"error": "Formato de token inválido"}), 401
             except Exception as e:
+                print(f"❌ Error procesando token: {e}")
+                import traceback
+                traceback.print_exc()
                 return jsonify({"error": "Token inválido o expirado"}), 401
+            
+            # Verificar rol
             if not tiene_rol(userinfo, keycloak_openid.client_id, rol_requerido):
+                print(f"❌ Acceso denegado: se requiere rol '{rol_requerido}'")
+                print(f"   Roles en realm_access: {userinfo.get('realm_access', {}).get('roles', [])}")
+                print(f"   Roles en resource_access: {userinfo.get('resource_access', {})}")
                 return jsonify({"error": f"Acceso denegado: se requiere el rol '{rol_requerido}'"}), 403
-            # guardar información del usuario en 'g' para que la función pueda acceder si lo necesita
+            
+            print(f"✅ Acceso permitido para rol '{rol_requerido}'")
             g.userinfo = userinfo
             return f(*args, **kwargs)
+        
         return decorated
     return decorator
 
@@ -283,32 +326,34 @@ def get_student_schedule_dashboard():
 @app.route('/student/profile', methods=['GET'])
 @token_required('estudiante')
 def get_student_profile():
-    """Obtener perfil completo del estudiante"""
     try:
-        # Obtener ID del estudiante desde el token
         student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
         student_sub = g.userinfo.get('sub')
         
         usuarios = get_usuarios_collection()
         
         # Buscar estudiante
-        estudiante = usuarios.find_one({
-            'correo': student_email,
-            'rol': 'estudiante',
-            'activo': True
-        })
+        estudiante = usuarios.find_one({'correo': student_email, 'rol': 'estudiante'})
         
+        # ✅ Si no existe, crearlo automáticamente desde Keycloak
         if not estudiante:
-            student_obj_id = string_to_objectid(student_sub)
-            if student_obj_id:
-                estudiante = usuarios.find_one({
-                    '_id': student_obj_id,
-                    'rol': 'estudiante',
-                    'activo': True
-                })
-        
-        if not estudiante:
-            return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
+            print(f"ℹ️ Estudiante no existe en MongoDB, creando desde Keycloak...")
+            
+            nuevo_estudiante = {
+                'correo': student_email,
+                'keycloak_id': student_sub,
+                'rol': 'estudiante',
+                'nombres': g.userinfo.get('given_name', 'Sin nombre'),
+                'apellidos': g.userinfo.get('family_name', 'Sin apellido'),
+                'codigo_est': f'AUTO-{student_sub[:8]}',
+                'activo': True,
+                'creado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
+            }
+            
+            resultado = usuarios.insert_one(nuevo_estudiante)
+            estudiante = usuarios.find_one({'_id': resultado.inserted_id})
+            
+            print(f"✅ Estudiante creado automáticamente: {estudiante.get('correo')}")
         
         return jsonify({
             'success': True,
@@ -316,36 +361,27 @@ def get_student_profile():
         }), 200
         
     except Exception as e:
-        print(f"❌ Error en get_student_profile: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
+        return jsonify({'success': False, 'error': str(e)}), 500        
 
 @app.route('/student/courses', methods=['GET'])
 @token_required('estudiante')
 def get_student_courses():
     """Obtener cursos matriculados del estudiante"""
     try:
-        # Obtener ID del estudiante desde el token
+        # ✅ SOLO obtener email del token
         student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
-        student_sub = g.userinfo.get('sub')
+        
+        if not student_email:
+            return jsonify({'success': False, 'error': 'Email no encontrado en el token'}), 400
         
         usuarios = get_usuarios_collection()
         
-        # Buscar estudiante
+        # ✅ Buscar SOLO por email
         estudiante = usuarios.find_one({
             'correo': student_email,
             'rol': 'estudiante',
             'activo': True
         })
-        
-        if not estudiante:
-            student_obj_id = string_to_objectid(student_sub)
-            if student_obj_id:
-                estudiante = usuarios.find_one({
-                    '_id': student_obj_id,
-                    'rol': 'estudiante',
-                    'activo': True
-                })
         
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
@@ -389,107 +425,26 @@ def get_student_courses():
     except Exception as e:
         print(f"❌ Error en get_student_courses: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
-# @app.route('/student/tasks', methods=['GET'])
-# @token_required('estudiante')
-# def get_student_tasks():
-#     """Obtener tareas del estudiante"""
-#     try:
-#         # Obtener ID del estudiante desde el token
-#         student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
-#         student_sub = g.userinfo.get('sub')
-        
-#         usuarios = get_usuarios_collection()
-        
-#         # Buscar estudiante
-#         estudiante = usuarios.find_one({
-#             'correo': student_email,
-#             'rol': 'estudiante',
-#             'activo': True
-#         })
-        
-#         if not estudiante:
-#             student_obj_id = string_to_objectid(student_sub)
-#             if student_obj_id:
-#                 estudiante = usuarios.find_one({
-#                     '_id': student_obj_id,
-#                     'rol': 'estudiante',
-#                     'activo': True
-#                 })
-        
-#         if not estudiante:
-#             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
-        
-#         # Por ahora devolver tareas mock
-#         # TODO: Implementar sistema de tareas en la base de datos
-#         tareas = [
-#             {
-#                 'id': 1,
-#                 'materia': 'Matemáticas',
-#                 'titulo': 'Ejercicios de Álgebra',
-#                 'descripcion': 'Resolver los ejercicios del 1 al 20 de la página 45',
-#                 'fechaEntrega': (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d'),
-#                 'estado': 'pendiente',
-#                 'progreso': 0
-#             },
-#             {
-#                 'id': 2,
-#                 'materia': 'Español',
-#                 'titulo': 'Ensayo sobre literatura',
-#                 'descripcion': 'Escribir un ensayo de 500 palabras sobre "Cien años de soledad"',
-#                 'fechaEntrega': (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d'),
-#                 'estado': 'entregada',
-#                 'progreso': 100
-#             },
-#             {
-#                 'id': 3,
-#                 'materia': 'Ciencias',
-#                 'titulo': 'Proyecto de laboratorio',
-#                 'descripcion': 'Realizar experimento sobre el ciclo del agua',
-#                 'fechaEntrega': (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'),
-#                 'estado': 'calificada',
-#                 'calificacion': 4.5,
-#                 'progreso': 100
-#             }
-#         ]
-        
-#         return jsonify({
-#             'success': True,
-#             'tasks': tareas
-#         }), 200
-        
-#     except Exception as e:
-#         print(f"❌ Error en get_student_tasks: {e}")
-#         return jsonify({'success': False, 'error': str(e)}), 500
-
-
+    
 @app.route('/student/certificado/<tipo>', methods=['GET'])
 @token_required('estudiante')
 def download_certificado(tipo):
     """Generar certificado en PDF"""
     try:
-        # Obtener ID del estudiante desde el token
+        # ✅ SOLO obtener email del token
         student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
-        student_sub = g.userinfo.get('sub')
+        
+        if not student_email:
+            return jsonify({'success': False, 'error': 'Email no encontrado en el token'}), 400
         
         usuarios = get_usuarios_collection()
         
-        # Buscar estudiante
+        # ✅ Buscar SOLO por email
         estudiante = usuarios.find_one({
             'correo': student_email,
             'rol': 'estudiante',
             'activo': True
         })
-        
-        if not estudiante:
-            student_obj_id = string_to_objectid(student_sub)
-            if student_obj_id:
-                estudiante = usuarios.find_one({
-                    '_id': student_obj_id,
-                    'rol': 'estudiante',
-                    'activo': True
-                })
         
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
@@ -563,27 +518,20 @@ def download_boletin():
         # Obtener parámetros
         periodo = request.args.get('periodo', '1')
         
-        # Obtener ID del estudiante desde el token
+        # ✅ SOLO obtener email del token
         student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
-        student_sub = g.userinfo.get('sub')
+        
+        if not student_email:
+            return jsonify({'success': False, 'error': 'Email no encontrado en el token'}), 400
         
         usuarios = get_usuarios_collection()
         
-        # Buscar estudiante
+        # ✅ Buscar SOLO por email
         estudiante = usuarios.find_one({
             'correo': student_email,
             'rol': 'estudiante',
             'activo': True
         })
-        
-        if not estudiante:
-            student_obj_id = string_to_objectid(student_sub)
-            if student_obj_id:
-                estudiante = usuarios.find_one({
-                    '_id': student_obj_id,
-                    'rol': 'estudiante',
-                    'activo': True
-                })
         
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404

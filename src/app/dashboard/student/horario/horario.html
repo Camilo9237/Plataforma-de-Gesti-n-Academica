@@ -1,41 +1,85 @@
-<div class="horario-page">
-<div class="page-header">
-    <a class="back" routerLink="/dashboard/student">← Volver al Dashboard</a>
-    <div class="title-block">
-    <h2>Horario Académico</h2>
-    <p class="hint">Consulta tu horario de clase semanal</p>
-    </div>
-    <div class="actions">
-    <select class="grade-select">
-        <option>Grado 10-A</option>
-        <option>Grado 10-B</option>
-    </select>
-    <button class="download" (click)="downloadPdf()">Descargar PDF</button>
-    </div>
-</div>
+<a class="back" routerLink="/dashboard/student">← Volver al Dashboard</a>
 
-<div class="week-nav">
-    <button class="btn">←</button>
-    <div class="week-range">Semana del 18 - 22 Nov 2024</div>
-    <button class="btn">→</button>
-</div>
+<section class="horario-root">
+  <header class="header">
+    <h2>Mi Horario Académico</h2>
+    <p class="hint">Consulta tu horario de clases semanal</p>
+  </header>
 
-  <div class="schedule-grid card">
-    <div class="day-col" *ngFor="let d of ['Lunes','Martes','Miércoles','Jueves','Viernes']">
-      <div class="day-header">{{ d }}</div>
-      <div class="lesson" *ngFor="let i of [1,2,3,4,5]">
-        <div class="time">7:00 - 7:45</div>
-        <div class="lesson-subject">Matemáticas</div>
-        <div class="lesson-meta">Prof. García · A101</div>
+  <!-- Día Actual -->
+  <div class="current-day card">
+    <div class="day-icon">📅</div>
+    <div class="day-info">
+      <div class="day-label">Hoy es</div>
+      <div class="day-name">{{ getDiaActual() }}</div>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading" class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando horario...</p>
+  </div>
+
+  <!-- Error State -->
+  <div *ngIf="error" class="alert alert-error">
+    ❌ {{ error }}
+  </div>
+
+  <!-- Tabla de Horario -->
+  <div class="card horario-card" *ngIf="!loading">
+    <div class="table-container">
+      <table class="horario-table">
+        <thead>
+          <tr>
+            <th class="hora-col">Hora</th>
+            <th>Lunes</th>
+            <th>Martes</th>
+            <th>Miércoles</th>
+            <th>Jueves</th>
+            <th>Viernes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let clase of horario" [class.descanso-row]="esDescanso(clase.lunes)">
+            <td class="hora">{{ clase.hora }}</td>
+            <td [class.descanso]="esDescanso(clase.lunes)">
+              <div class="materia">{{ clase.lunes }}</div>
+            </td>
+            <td [class.descanso]="esDescanso(clase.martes)">
+              <div class="materia">{{ clase.martes }}</div>
+            </td>
+            <td [class.descanso]="esDescanso(clase.miercoles)">
+              <div class="materia">{{ clase.miercoles }}</div>
+            </td>
+            <td [class.descanso]="esDescanso(clase.jueves)">
+              <div class="materia">{{ clase.jueves }}</div>
+            </td>
+            <td [class.descanso]="esDescanso(clase.viernes)">
+              <div class="materia">{{ clase.viernes }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Leyenda -->
+  <div class="card legend">
+    <h3>Información Adicional</h3>
+    <div class="legend-items">
+      <div class="legend-item">
+        <div class="legend-color regular"></div>
+        <span>Clases Regulares</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color descanso"></div>
+        <span>Descanso</span>
       </div>
     </div>
+    <p class="note">
+      <strong>Nota:</strong> Este horario puede estar sujeto a cambios. 
+      Consulta con tu coordinador académico ante cualquier duda.
+    </p>
   </div>
-
-  <div class="summary card">
-    <div class="summary-grid">
-      <div class="item"><div class="label">Total de Clases</div><div class="value">30</div></div>
-      <div class="item"><div class="label">Horas Semanales</div><div class="value">22.5 hrs</div></div>
-      <div class="item"><div class="label">Materias</div><div class="value">12</div></div>
-    </div>
-  </div>
-</div>
+</section>

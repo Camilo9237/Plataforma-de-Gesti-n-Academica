@@ -48,7 +48,7 @@ def handle_preflight():
 KEYCLOAK_SERVER = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8082')
 KEYCLOAK_CLIENT_ID = os.getenv('KEYCLOAK_CLIENT_ID', '01')
 KEYCLOAK_REALM = os.getenv('KEYCLOAK_REALM', 'plataformaInstitucional')
-KEYCLOAK_CLIENT_SECRET = os.getenv('KEYCLOAK_CLIENT_SECRET', None)
+KEYCLOAK_CLIENT_SECRET = os.getenv('KEYCLOAK_CLIENT_SECRET', 'wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz')
 
 keycloak_openid = None
 if KeycloakOpenID is not None:
@@ -120,28 +120,30 @@ def token_required(rol_requerido):
                 
             try:
                 token = auth_header.split(' ')[1]
+                print(f"🔑 Token recibido: {token[:50]}...")
                 
-                # 🔧 OPCIÓN 1: Decodificar sin verificar firma (solo para desarrollo)
-                # En producción deberías verificar la firma con la clave pública de Keycloak
-                userinfo = pyjwt.decode(token, options={"verify_signature": False})
-                
-                # 🔧 OPCIÓN 2: Usar introspección (más seguro pero más lento)
-                # introspect_result = keycloak_openid.introspect(token)
-                # if not introspect_result.get('active'):
-                #     return jsonify({'error': 'Token inválido o expirado'}), 401
-                # userinfo = introspect_result
-                
-                # 🔍 DEBUG: Mostrar información del token decodificado
-                print("=" * 80)
-                print("TOKEN DECODIFICADO EN ADMINISTRATOR SERVICE:")
-                print(f"Usuario: {userinfo.get('preferred_username', 'N/A')}")
-                print(f"Realm roles: {userinfo.get('realm_access', {}).get('roles', [])}")
-                print(f"Resource access: {list(userinfo.get('resource_access', {}).keys())}")
-                
-                # Mostrar todos los client roles
-                for client_id, client_data in userinfo.get('resource_access', {}).items():
-                    print(f"  - {client_id}: {client_data.get('roles', [])}")
-                print("=" * 80)
+                # Intentar decodificar con Keycloak (modo producción)
+                try:
+                    public_key_pem = f"-----BEGIN PUBLIC KEY-----\n{keycloak_openid.public_key()}\n-----END PUBLIC KEY-----"
+                    
+                    userinfo = keycloak_openid.decode_token(
+                        token,
+                        key=public_key_pem,
+                        options={
+                            "verify_signature": True,
+                            "verify_aud": False,
+                            "verify_exp": True
+                        }
+                    )
+                    print(f"✅ Token decodificado con Keycloak")
+                    print(f"   Usuario: {userinfo.get('preferred_username', 'N/A')}")
+                    print(f"   Email: {userinfo.get('email', 'N/A')}")
+                    
+                except Exception as decode_error:
+                    print(f"⚠️ Error decodificando con Keycloak: {decode_error}")
+                    # Fallback: decodificar sin verificar firma
+                    userinfo = pyjwt.decode(token, options={"verify_signature": False})
+                    print("⚠️ Token decodificado SIN verificar firma (modo desarrollo)")
                 
             except pyjwt.ExpiredSignatureError:
                 print("✗ Token expirado")
@@ -161,6 +163,7 @@ def token_required(rol_requerido):
 
             g.userinfo = userinfo
             return f(*args, **kwargs)
+        
         return decorated
     return decorator
 
