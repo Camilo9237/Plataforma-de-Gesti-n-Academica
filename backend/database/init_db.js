@@ -238,3 +238,63 @@ db.auditoria.createIndex({ fecha: 1 });
 
 print("✔ Colección 'auditoria' creada con índices");
 print("✅ Esquema de base de datos creado exitosamente");
+
+
+// ==========================================
+//   COLECCIÓN: ASISTENCIA
+// ==========================================
+db.createCollection("asistencia", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["id_curso", "id_docente", "fecha", "registros"],
+      properties: {
+        id_curso: { bsonType: "objectId", description: "Referencia al curso" },
+        id_docente: { bsonType: "objectId", description: "Referencia al docente que registra" },
+        fecha: { bsonType: "date", description: "Fecha de la asistencia" },
+        periodo: { bsonType: "string", description: "Periodo académico" },
+        registros: {
+          bsonType: "array",
+          description: "Lista de asistencia de estudiantes",
+          items: {
+            bsonType: "object",
+            required: ["id_estudiante", "estado"],
+            properties: {
+              id_estudiante: { bsonType: "objectId" },
+              estudiante_info: {
+                bsonType: "object",
+                properties: {
+                  nombres: { bsonType: "string" },
+                  apellidos: { bsonType: "string" },
+                  codigo_est: { bsonType: "string" }
+                }
+              },
+              estado: {
+                enum: ["presente", "ausente", "tarde", "excusa"],
+                description: "Estado de asistencia"
+              },
+              observaciones: { bsonType: "string" }
+            }
+          }
+        },
+        curso_info: {
+          bsonType: "object",
+          properties: {
+            nombre_curso: { bsonType: "string" },
+            codigo_curso: { bsonType: "string" },
+            grado: { bsonType: "string" }
+          }
+        },
+        creado_en: { bsonType: "timestamp" },
+        actualizado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+// Índices
+db.asistencia.createIndex({ id_curso: 1, fecha: 1 });
+db.asistencia.createIndex({ id_docente: 1 });
+db.asistencia.createIndex({ fecha: -1 });
+
+print("✔ Colección 'asistencia' creada con índices");

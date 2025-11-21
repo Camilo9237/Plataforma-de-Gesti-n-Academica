@@ -13,6 +13,7 @@ from database.db_config import (
     get_usuarios_collection,
     get_cursos_collection,
     get_matriculas_collection,
+    get_asistencia_collection, 
     serialize_doc,
     string_to_objectid,
     registrar_auditoria
@@ -1089,6 +1090,334 @@ def bulk_upload_grades():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/teacher/attendance', methods=['GET'])
+@token_required('docente')
+def get_attendance_by_course():
+    """Obtener asistencia de un curso en una fecha específica"""
+    try:
+        course_id = request.args.get('course_id')
+        fecha = request.args.get('fecha')  # Formato: YYYY-MM-DD
+        
+        if not course_id or not fecha:
+            return jsonify({
+                'success': False,
+                'error': 'Se requieren course_id y fecha'
+            }), 400
+        
+        # Convertir IDs
+        curso_obj_id = string_to_objectid(course_id)
+        if not curso_obj_id:
+            return jsonify({'success': False, 'error': 'ID de curso inválido'}), 400
+        
+        # Convertir fecha string a datetime
+        try:
+            fecha_obj = datetime.strptime(fecha, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Formato de fecha inválido'}), 400
+        
+        asistencia = get_asistencia_collection()
+        
+        # Buscar registro de asistencia
+        registro = asistencia.find_one({
+            'id_curso': curso_obj_id,
+            'fecha': fecha_obj
+        })
+        
+        if registro:
+            return jsonify({
+                'success': True,
+                'attendance': serialize_doc(registro)
+            }), 200
+        else:
+            # Si no existe, devolver estructura vacía
+            return jsonify({
+                'success': True,
+                'attendance': None,
+                'message': 'No hay registro de asistencia para esta fecha'
+            }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_attendance_by_course: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/teacher/attendance', methods=['POST'])
+@token_required('docente')
+def save_attendance():
+    """Guardar o actualizar registro de asistencia"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
+        
+        # Validar campos requeridos
+        required_fields = ['course_id', 'fecha', 'registros']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'El campo {field} es requerido'
+                }), 400
+        
+        # 🔧 CORRECCIÓN: Obtener email del token correctamente
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
+        
+        print(f"🔍 Datos del token:")
+        print(f"   Email: {teacher_email}")
+        print(f"   Sub: {teacher_sub}")
+        print(f"   UserInfo completo: {g.userinfo}")
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar docente por email primero
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        # Si no se encuentra por email, intentar por keycloak_id
+        if not docente:
+            print(f"⚠️ No se encontró por email, intentando por keycloak_id...")
+            docente = usuarios.find_one({
+                'keycloak_id': teacher_sub,
+                'rol': 'docente',
+                'activo': True
+            })
+        
+        # Si aún no se encuentra, intentar por _id (si el sub es un ObjectId válido)
+        if not docente:
+            print(f"⚠️ No se encontró por keycloak_id, intentando por _id...")
+            teacher_obj_id = string_to_objectid(teacher_sub)
+            if teacher_obj_id:
+                docente = usuarios.find_one({
+                    '_id': teacher_obj_id,
+                    'rol': 'docente',
+                    'activo': True
+                })
+        
+        if not docente:
+            print(f"❌ Docente no encontrado en la base de datos")
+            print(f"   Email buscado: {teacher_email}")
+            print(f"   Sub buscado: {teacher_sub}")
+            return jsonify({
+                'success': False,
+                'error': 'Docente no encontrado en la base de datos'
+            }), 404
+        
+        print(f"✅ Docente encontrado: {docente.get('nombres')} {docente.get('apellidos')}")
+        
+        # Convertir curso_id
+        curso_obj_id = string_to_objectid(data['course_id'])
+        if not curso_obj_id:
+            return jsonify({'success': False, 'error': 'ID de curso inválido'}), 400
+        
+        # Verificar que el curso existe y pertenece al docente
+        cursos = get_cursos_collection()
+        curso = cursos.find_one({'_id': curso_obj_id})
+        
+        if not curso:
+            return jsonify({'success': False, 'error': 'Curso no encontrado'}), 404
+        
+        if curso.get('id_docente') != docente['_id']:
+            return jsonify({
+                'success': False,
+                'error': 'No tienes permiso para registrar asistencia en este curso'
+            }), 403
+        
+        # Convertir fecha
+        try:
+            fecha_obj = datetime.strptime(data['fecha'], '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Formato de fecha inválido'}), 400
+        
+        # Preparar registros de asistencia con información de estudiantes
+        registros_procesados = []
+        matriculas = get_matriculas_collection()
+        
+        for registro in data['registros']:
+            estudiante_id = string_to_objectid(registro['id_estudiante'])
+            if not estudiante_id:
+                continue
+            
+            # Buscar información del estudiante desde la matrícula
+            matricula = matriculas.find_one({
+                'id_estudiante': estudiante_id,
+                'id_curso': curso_obj_id,
+                'estado': 'activo'
+            })
+            
+            if matricula:
+                registros_procesados.append({
+                    'id_estudiante': estudiante_id,
+                    'estudiante_info': matricula.get('estudiante_info', {}),
+                    'estado': registro.get('estado', 'presente'),
+                    'observaciones': registro.get('observaciones', '')
+                })
+        
+        # Crear documento de asistencia
+        asistencia = get_asistencia_collection()
+        
+        documento_asistencia = {
+            'id_curso': curso_obj_id,
+            'id_docente': docente['_id'],
+            'fecha': fecha_obj,
+            'periodo': data.get('periodo', curso.get('periodo', '1')),
+            'registros': registros_procesados,
+            'curso_info': {
+                'nombre_curso': curso.get('nombre_curso', ''),
+                'codigo_curso': curso.get('codigo_curso', ''),
+                'grado': curso.get('grado', '')
+            },
+            'actualizado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
+        }
+        
+        # Verificar si ya existe registro para esa fecha
+        registro_existente = asistencia.find_one({
+            'id_curso': curso_obj_id,
+            'fecha': fecha_obj
+        })
+        
+        if registro_existente:
+            # Actualizar registro existente
+            resultado = asistencia.update_one(
+                {'_id': registro_existente['_id']},
+                {'$set': documento_asistencia}
+            )
+            
+            mensaje = 'Asistencia actualizada exitosamente'
+            registro_id = str(registro_existente['_id'])
+        else:
+            # Crear nuevo registro
+            documento_asistencia['creado_en'] = Timestamp(int(datetime.utcnow().timestamp()), 0)
+            resultado = asistencia.insert_one(documento_asistencia)
+            mensaje = 'Asistencia registrada exitosamente'
+            registro_id = str(resultado.inserted_id)
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=docente['_id'],
+            accion='registrar_asistencia',
+            entidad_afectada='asistencia',
+            id_entidad=registro_id,
+            detalles=f"Asistencia registrada para {curso.get('nombre_curso')} - {data['fecha']}"
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': mensaje,
+            'attendance_id': registro_id
+        }), 201
+        
+    except Exception as e:
+        print(f"❌ Error en save_attendance: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/teacher/attendance/statistics', methods=['GET'])
+@token_required('docente')
+def get_attendance_statistics():
+    """Obtener estadísticas de asistencia de un curso"""
+    try:
+        course_id = request.args.get('course_id')
+        periodo = request.args.get('periodo')
+        
+        if not course_id:
+            return jsonify({'success': False, 'error': 'Se requiere course_id'}), 400
+        
+        curso_obj_id = string_to_objectid(course_id)
+        if not curso_obj_id:
+            return jsonify({'success': False, 'error': 'ID de curso inválido'}), 400
+        
+        asistencia = get_asistencia_collection()
+        
+        # Construir query
+        query = {'id_curso': curso_obj_id}
+        if periodo:
+            query['periodo'] = periodo
+        
+        # Obtener todos los registros de asistencia del curso
+        registros = list(asistencia.find(query).sort('fecha', -1))
+        
+        # Calcular estadísticas
+        total_registros = len(registros)
+        total_estudiantes = 0
+        total_presentes = 0
+        total_ausentes = 0
+        total_tardes = 0
+        
+        # Estadísticas por estudiante
+        estadisticas_estudiantes = {}
+        
+        for registro in registros:
+            for item in registro.get('registros', []):
+                estudiante_id = str(item['id_estudiante'])
+                estado = item.get('estado', 'presente')
+                
+                if estudiante_id not in estadisticas_estudiantes:
+                    estadisticas_estudiantes[estudiante_id] = {
+                        'estudiante_info': item.get('estudiante_info', {}),
+                        'total_clases': 0,
+                        'presentes': 0,
+                        'ausentes': 0,
+                        'tardes': 0,
+                        'excusas': 0
+                    }
+                
+                estadisticas_estudiantes[estudiante_id]['total_clases'] += 1
+                
+                if estado == 'presente':
+                    estadisticas_estudiantes[estudiante_id]['presentes'] += 1
+                    total_presentes += 1
+                elif estado == 'ausente':
+                    estadisticas_estudiantes[estudiante_id]['ausentes'] += 1
+                    total_ausentes += 1
+                elif estado == 'tarde':
+                    estadisticas_estudiantes[estudiante_id]['tardes'] += 1
+                    total_tardes += 1
+                elif estado == 'excusa':
+                    estadisticas_estudiantes[estudiante_id]['excusas'] += 1
+        
+        # Calcular porcentajes por estudiante
+        estudiantes_stats = []
+        for est_id, stats in estadisticas_estudiantes.items():
+            total_clases = stats['total_clases']
+            porcentaje_asistencia = round((stats['presentes'] / total_clases * 100), 2) if total_clases > 0 else 0
+            
+            estudiantes_stats.append({
+                'estudiante_id': est_id,
+                'estudiante_info': stats['estudiante_info'],
+                'total_clases': total_clases,
+                'presentes': stats['presentes'],
+                'ausentes': stats['ausentes'],
+                'tardes': stats['tardes'],
+                'excusas': stats['excusas'],
+                'porcentaje_asistencia': porcentaje_asistencia
+            })
+        
+        # Ordenar por porcentaje de asistencia descendente
+        estudiantes_stats.sort(key=lambda x: x['porcentaje_asistencia'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'statistics': {
+                'total_registros': total_registros,
+                'total_presentes': total_presentes,
+                'total_ausentes': total_ausentes,
+                'total_tardes': total_tardes,
+                'estudiantes': estudiantes_stats
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_attendance_statistics: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Manejo de errores
 @app.errorhandler(404)

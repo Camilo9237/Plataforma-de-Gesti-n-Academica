@@ -14,8 +14,12 @@ export class ApiService {
     return this.http.post(`${environment.api.login}/login`, credentials);
   }
 
+  getDashboard() {
+    return this.http.get(`${environment.api.admin}/dashboard-general`);
+  }
+
   // ===== ESTUDIANTES =====
-  getStudents() {
+  getStudentsList() {
     return this.http.get(`${environment.api.students}/students`);
   }
 
@@ -44,11 +48,11 @@ export class ApiService {
   }
 
   getStudentSchedule() {
-    return this.http.get(`${environment.api.students}/student/schedule`);
+    return this.http.get(`${environment.api.students}/student/schedule-today`);
   }
 
   // ===== PROFESORES =====
-  getTeachers() {
+  getTeachersList() {
     return this.http.get(`${environment.api.teachers}/teachers`);
   }
 
@@ -76,9 +80,14 @@ export class ApiService {
     return this.http.get(`${environment.api.teachers}/teacher/pending-grades`);
   }
 
-  // ===== CALIFICACIONES (PROFESOR) =====
+  getTeacherOverview() {
+    return this.http.get(`${environment.api.teachers}/teacher/overview`);
+  }
 
-  
+  // ===== CALIFICACIONES (PROFESOR) =====
+  getCourseGrades(courseId: string) {
+    return this.http.get(`${environment.api.teachers}/teacher/courses/${courseId}/grades`);
+  }
 
   addGrade(data: {
     enrollment_id: string;
@@ -111,7 +120,29 @@ export class ApiService {
     return this.http.post(`${environment.api.teachers}/teacher/grades/bulk`, data);
   }
 
+  // ===== ASISTENCIA =====
+  getAttendance(courseId: string, fecha: string): Observable<any> {
+    return this.http.get(`${environment.api.teachers}/teacher/attendance`, {
+      params: { course_id: courseId, fecha: fecha }
+    });
+  }
 
+  saveAttendance(data: any): Observable<any> {
+    return this.http.post(`${environment.api.teachers}/teacher/attendance`, data);
+  }
+
+  getAttendanceStatistics(courseId: string, periodo?: string): Observable<any> {
+    const params: any = { course_id: courseId };
+    if (periodo) {
+      params.periodo = periodo;
+    }
+    return this.http.get(`${environment.api.teachers}/teacher/attendance/statistics`, { params });
+  }
+
+  // ===== GRUPOS =====
+  getGroupById(groupId: string): Observable<any> {
+    return this.http.get(`${environment.api.groups}/groups/${groupId}`);
+  }
 
   // ===== ADMINISTRADORES =====
   getAdministrators() {
@@ -132,6 +163,10 @@ export class ApiService {
 
   deleteAdministrator(id: string) {
     return this.http.delete(`${environment.api.administrator}/administrators/${id}`);
+  }
+
+  getAdminOverview() {
+    return this.http.get(`${environment.api.admin}/dashboard-general`);
   }
 
   getAdminStats() {
@@ -176,15 +211,5 @@ export class ApiService {
       responseType: 'blob',
       observe: 'response'
     });
-  }
-
-  // Agregar estos métodos a la clase ApiService
-
-  getGroupById(groupId: string): Observable<any> {
-    return this.http.get(`${environment.api.groups}/groups/${groupId}`);
-  }
-
-  getCourseGrades(courseId: string) {
-    return this.http.get(`${environment.api.teachers}/teacher/courses/${courseId}/grades`);
   }
 }

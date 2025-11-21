@@ -90,7 +90,9 @@ def get_auditoria_collection():
     """Obtiene la colección de auditoría"""
     return DatabaseConfig.get_collection('auditoria')
 
-
+def get_asistencia_collection():
+    """Obtener la colección de asistencia"""
+    return DatabaseConfig.get_collection('asistencia')
 # Funciones de utilidad para conversión de datos
 
 def serialize_doc(doc):
