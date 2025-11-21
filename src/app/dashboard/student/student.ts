@@ -1,8 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
-import { Router } from '@angular/router';
+import { AlertService } from '../../services/alert.service';
 
 @Component({
   selector: 'app-dashboard-student',
@@ -20,7 +20,11 @@ export default class StudentComponent implements OnInit {
   loading = false;
   error: string | null = null;
 
-  constructor(private api: ApiService, private router: Router) {}
+  constructor(
+    private api: ApiService,
+    private router: Router,
+    private alertService: AlertService  // ✅ Inyectar AlertService
+  ) {}
 
   ngOnInit() {
     this.loadAll();
@@ -37,6 +41,7 @@ export default class StudentComponent implements OnInit {
       },
       error: (err: any) => {
         console.error('❌ Error cargando calificaciones:', err);
+        this.alertService.error('No se pudieron cargar las calificaciones');
         this.error = 'Error al cargar calificaciones';
       }
     });
@@ -49,6 +54,7 @@ export default class StudentComponent implements OnInit {
       },
       error: (err: any) => {
         console.error('❌ Error cargando notificaciones:', err);
+        this.alertService.error('No se pudieron cargar las notificaciones');
       }
     });
 
@@ -60,6 +66,7 @@ export default class StudentComponent implements OnInit {
       },
       error: (err: any) => {
         console.error('❌ Error cargando horario:', err);
+        this.alertService.error('No se pudo cargar el horario');
       }
     });
 
@@ -73,6 +80,7 @@ export default class StudentComponent implements OnInit {
       },
       error: (err: any) => {
         console.error('❌ Error cargando perfil:', err);
+        this.alertService.error('No se pudo cargar el perfil');
       }
     });
 
@@ -82,11 +90,13 @@ export default class StudentComponent implements OnInit {
         if (res.success) {
           console.log('✅ Cursos cargados:', res.courses);
           this.courses = res.courses;
+          this.alertService.success('Datos cargados correctamente');
         }
         this.loading = false;
       },
       error: (err: any) => {
         console.error('❌ Error cargando cursos:', err);
+        this.alertService.error('No se pudieron cargar los cursos');
         this.loading = false;
       }
     });
@@ -104,15 +114,27 @@ export default class StudentComponent implements OnInit {
     return (average / 5) * 100;
   }
 
-  logout(): void {
-    if (confirm('¿Está seguro que desea cerrar sesión?')) {
+  async logout(): Promise<void> {
+    const confirmed = await this.alertService.confirm({
+      title: '¿Cerrar Sesión?',
+      message: '¿Está seguro que desea cerrar su sesión actual?',
+      confirmText: 'Sí, cerrar sesión',
+      cancelText: 'Cancelar',
+      type: 'danger'
+    });
+
+    if (confirmed) {
       // Limpiar localStorage
       localStorage.removeItem('access_token');
       localStorage.removeItem('user_role');
       localStorage.removeItem('userInfo');
       
+      this.alertService.success('Sesión cerrada exitosamente', '👋 Hasta pronto');
+      
       // Redirigir al login
-      this.router.navigate(['/login']);
+      setTimeout(() => {
+        this.router.navigate(['/login']);
+      }, 1000);
     }
   }
 }

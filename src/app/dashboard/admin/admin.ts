@@ -2,6 +2,8 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router'; // ✅ Agregar RouterModule
 import { ApiService } from '../../services/api.service';
+import { AlertService } from '../../services/alert.service';
+
 
 @Component({
   selector: 'app-admin',
@@ -36,7 +38,8 @@ export default class AdminComponent implements OnInit {
 
   constructor(
     private api: ApiService,
-    private router: Router
+    private router: Router,
+    private alertService: AlertService
   ) {}
 
   ngOnInit(): void {
@@ -166,23 +169,27 @@ export default class AdminComponent implements OnInit {
   //   GESTIÓN DE ESTUDIANTES
   // ==========================================
 
-  deleteStudent(studentId: string): void {
-    if (!confirm('¿Está seguro de eliminar este estudiante? Esta acción no se puede deshacer.')) {
-      return;
-    }
+  async deleteStudent(studentId: string): Promise<void> {
+  const confirmed = await this.alertService.confirm({
+    title: '¿Eliminar Estudiante?',
+    message: 'Esta acción no se puede deshacer. ¿Está seguro?',
+    confirmText: 'Sí, eliminar',
+    cancelText: 'Cancelar',
+    type: 'danger'
+  });
 
+  if (confirmed) {
     this.api.deleteStudent(studentId).subscribe({
-      next: (response) => {
-        console.log('✅ Estudiante eliminado:', response);
+      next: () => {
+        this.alertService.success('Estudiante eliminado correctamente');
         this.loadStudents();
-        this.loadStats();
       },
-      error: (err) => {
-        console.error('❌ Error eliminando estudiante:', err);
-        alert('Error al eliminar el estudiante');
+      error: () => {
+        this.alertService.error('No se pudo eliminar el estudiante');
       }
     });
   }
+}
 
   // ==========================================
   //   GESTIÓN DE CURSOS

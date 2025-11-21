@@ -72,11 +72,30 @@
    TARJETAS Y CONTENIDO
 ========================================== */
 .top-row {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 18px
+  display: grid;
+  grid-template-columns: 1fr 450px; /* Horario más grande, columna derecha fija */
+  gap: 20px;
+  margin-bottom: 18px;
+}
+/* ==========================================
+   PANEL DE HORARIO (AHORA A LA IZQUIERDA)
+========================================== */
+.schedule-card {
+  background: #fff;
+  border: 1px solid #e7efe9;
+  border-radius: 10px;
+  padding: 18px;
+  box-shadow: 0 4px 14px rgba(21, 37, 32, 0.03);
 }
 
+/* ==========================================
+   COLUMNA DERECHA (CALIFICACIONES + NOTIFICACIONES)
+========================================== */
+.right-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
 .card {
     background: #fff;
     border: 1px solid #e7efe9;
@@ -222,9 +241,6 @@
     transform: translateY(-2px);
 }
 
-.schedule {
-    margin-top: 12px
-}
 
 .schedule-header {
     display: flex;
@@ -245,39 +261,42 @@
 
 .schedule-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;  /* ✅ CAMBIAR DE repeat(3, 1fr) a 1fr */
     gap: 12px;
     margin-top: 12px
 }
 
 .event {
-    background: #fff;
+    background: #f8fbf9;  /* ✅ CAMBIAR de #fff */
     border: 1px solid #eaf2ec;
     padding: 12px;
     border-radius: 8px;
+    border-left: 4px solid #0b6b3a;  /* ✅ AGREGAR ESTA LÍNEA */
     transition: all 0.2s ease;
 }
 
 .event:hover {
-    border-color: #0b6b3a;
-    box-shadow: 0 2px 8px rgba(11, 107, 58, 0.1);
+    background: #eef7ef;  /* ✅ CAMBIAR de border-color */
+    transform: translateX(4px);  /* ✅ CAMBIAR de solo box-shadow */
 }
 
 .event-time {
     font-size: 12px;
-    color: #6b7a73;
-    margin-bottom: 8px
+    color: #0b6b3a;  /* ✅ CAMBIAR de #6b7a73 */
+    font-weight: 700;  /* ✅ AGREGAR ESTA LÍNEA */
+    margin-bottom: 4px  /* ✅ CAMBIAR de 8px a 4px */
 }
 
 .event-subject {
-    font-weight: 700;
+    font-size: 14px;  /* ✅ AGREGAR ESTA LÍNEA */
+    font-weight: 600;  /* ✅ CAMBIAR de 700 */
     color: #18423a;
+    margin-bottom: 4px;  /* ✅ AGREGAR ESTA LÍNEA */
 }
 
 .event-meta {
     font-size: 12px;
-    color: #93a39b;
-    margin-top: 6px
+    color: #6b7a73
 }
 
 /* ==========================================
@@ -343,7 +362,13 @@
 ========================================== */
 @media (max-width: 900px) {
     .top-row {
-        flex-direction: column
+        grid-template-columns: 1fr;  /* ✅ CAMBIAR de flex-direction: column */
+    }
+
+    .right-column {  /* ✅ AGREGAR ESTE BLOQUE */
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
     }
 
     .notifications-card {
@@ -351,7 +376,7 @@
     }
 
     .schedule-grid {
-        grid-template-columns: repeat(2, 1fr)
+        grid-template-columns: 1fr;  /* ✅ CAMBIAR de repeat(2, 1fr) */
     }
 
     .quick-actions {
@@ -373,6 +398,14 @@
     .btn-logout {
         width: 100%;
         justify-content: center;
+    }
+
+    .top-row {  /* ✅ AGREGAR ESTA LÍNEA */
+        grid-template-columns: 1fr;
+    }
+
+    .right-column {  /* ✅ AGREGAR ESTE BLOQUE */
+        grid-template-columns: 1fr;
     }
 
     .schedule-grid {
