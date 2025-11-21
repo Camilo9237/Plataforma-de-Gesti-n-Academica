@@ -25,6 +25,12 @@ export const routes: Routes = [
     canActivate: [RoleGuard],
     data: { role: 'docente' }
   },
+  {
+    path: 'dashboard/teacher/observations',
+    loadComponent:() => import('./dashboard/teacher/observations/observations').then(m => m.default),
+    canActivate: [RoleGuard],
+    data: { role: 'docente'}
+  },
    {
     path: 'dashboard/teacher/grades',
     loadComponent: () => import('./dashboard/teacher/grades/grades').then(m => m.default),

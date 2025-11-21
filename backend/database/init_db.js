@@ -291,10 +291,91 @@ db.createCollection("asistencia", {
     }
   }
 });
-
 // Índices
 db.asistencia.createIndex({ id_curso: 1, fecha: 1 });
 db.asistencia.createIndex({ id_docente: 1 });
 db.asistencia.createIndex({ fecha: -1 });
 
 print("✔ Colección 'asistencia' creada con índices");
+
+// ==========================================
+//   COLECCIÓN: OBSERVACIONES
+// ==========================================
+db.createCollection("observaciones", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["id_estudiante", "id_docente", "id_curso", "tipo", "descripcion", "fecha"],
+      properties: {
+        id_estudiante: { bsonType: "objectId", description: "Referencia al estudiante" },
+        id_docente: { bsonType: "objectId", description: "Referencia al docente que registra" },
+        id_curso: { bsonType: "objectId", description: "Referencia al curso" },
+        tipo: {
+          enum: ["positiva", "negativa", "neutral"],
+          description: "Tipo de observación"
+        },
+        descripcion: { bsonType: "string", description: "Descripción de la observación" },
+        fecha: { bsonType: "date", description: "Fecha de la observación" },
+        seguimiento: { bsonType: "string", description: "Acciones de seguimiento tomadas" },
+        categoria: { 
+          enum: ["academica", "disciplinaria", "convivencia", "participacion", "otra"],
+          description: "Categoría de la observación" 
+        },
+        gravedad: {
+          enum: ["leve", "moderada", "grave"],
+          description: "Nivel de gravedad (para observaciones negativas)"
+        },
+        notificado_acudiente: { bsonType: "bool", description: "Si se notificó al acudiente" },
+        fecha_notificacion: { bsonType: "date", description: "Fecha en que se notificó" },
+        estudiante_info: {
+          bsonType: "object",
+          properties: {
+            nombres: { bsonType: "string" },
+            apellidos: { bsonType: "string" },
+            codigo_est: { bsonType: "string" }
+          }
+        },
+        docente_info: {
+          bsonType: "object",
+          properties: {
+            nombres: { bsonType: "string" },
+            apellidos: { bsonType: "string" },
+            especialidad: { bsonType: "string" }
+          }
+        },
+        curso_info: {
+          bsonType: "object",
+          properties: {
+            nombre_curso: { bsonType: "string" },
+            codigo_curso: { bsonType: "string" },
+            grado: { bsonType: "string" }
+          }
+        },
+        archivos_adjuntos: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            properties: {
+              nombre: { bsonType: "string" },
+              url: { bsonType: "string" },
+              tipo: { bsonType: "string" }
+            }
+          }
+        },
+        creado_en: { bsonType: "timestamp" },
+        actualizado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+// Índices
+db.observaciones.createIndex({ id_estudiante: 1 });
+db.observaciones.createIndex({ id_docente: 1 });
+db.observaciones.createIndex({ id_curso: 1 });
+db.observaciones.createIndex({ tipo: 1 });
+db.observaciones.createIndex({ fecha: -1 });
+db.observaciones.createIndex({ categoria: 1 });
+
+print("✔ Colección 'observaciones' creada con índices");
+

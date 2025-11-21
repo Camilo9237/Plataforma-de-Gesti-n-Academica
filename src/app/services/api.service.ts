@@ -199,6 +199,35 @@ export class ApiService {
       observe: 'response'
     });
   }
+  // Agregar estos métodos después de los métodos de asistencia:
+
+// ===== OBSERVACIONES =====
+getObservations(filters?: { course_id?: string; tipo?: string; categoria?: string; student_id?: string }): Observable<any> {
+  const params: any = {};
+  if (filters) {
+    if (filters.course_id) params.course_id = filters.course_id;
+    if (filters.tipo) params.tipo = filters.tipo;
+    if (filters.categoria) params.categoria = filters.categoria;
+    if (filters.student_id) params.student_id = filters.student_id;
+  }
+  return this.http.get(`${environment.api.teachers}/teacher/observations`, { params });
+}
+
+createObservation(data: any): Observable<any> {
+  return this.http.post(`${environment.api.teachers}/teacher/observations`, data);
+}
+
+updateObservation(observationId: string, data: any): Observable<any> {
+  return this.http.put(`${environment.api.teachers}/teacher/observations/${observationId}`, data);
+}
+
+deleteObservation(observationId: string): Observable<any> {
+  return this.http.delete(`${environment.api.teachers}/teacher/observations/${observationId}`);
+}
+
+getStudentObservations(studentId: string): Observable<any> {
+  return this.http.get(`${environment.api.teachers}/teacher/observations/student/${studentId}`);
+}
 
   /**
    * Descarga boletín de calificaciones en PDF

@@ -13,7 +13,8 @@ from database.db_config import (
     get_usuarios_collection,
     get_cursos_collection,
     get_matriculas_collection,
-    get_asistencia_collection, 
+    get_asistencia_collection,
+    get_observaciones_collection, 
     serialize_doc,
     string_to_objectid,
     registrar_auditoria
@@ -1419,6 +1420,439 @@ def get_attendance_statistics():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/teacher/observations', methods=['GET'])
+@token_required('docente')
+def get_teacher_observations():
+    """Obtener observaciones registradas por el docente"""
+    try:
+        # Obtener filtros opcionales
+        curso_id = request.args.get('course_id')
+        tipo = request.args.get('tipo')  # positiva, negativa, neutral
+        categoria = request.args.get('categoria')
+        estudiante_id = request.args.get('student_id')
+        
+        # Obtener ID del docente desde el token
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar docente
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        if not docente:
+            teacher_obj_id = string_to_objectid(teacher_sub)
+            if teacher_obj_id:
+                docente = usuarios.find_one({
+                    '_id': teacher_obj_id,
+                    'rol': 'docente',
+                    'activo': True
+                })
+        
+        if not docente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
+        
+        # Construir query
+        query = {'id_docente': docente['_id']}
+        
+        if curso_id:
+            curso_obj_id = string_to_objectid(curso_id)
+            if curso_obj_id:
+                query['id_curso'] = curso_obj_id
+        
+        if tipo and tipo != 'todas':
+            query['tipo'] = tipo.lower()
+        
+        if categoria:
+            query['categoria'] = categoria
+        
+        if estudiante_id:
+            estudiante_obj_id = string_to_objectid(estudiante_id)
+            if estudiante_obj_id:
+                query['id_estudiante'] = estudiante_obj_id
+        
+        observaciones = get_observaciones_collection()
+        
+        # Obtener observaciones ordenadas por fecha descendente
+        resultado = list(observaciones.find(query).sort('fecha', -1))
+        
+        # Calcular estadísticas
+        total = len(resultado)
+        positivas = len([o for o in resultado if o.get('tipo') == 'positiva'])
+        negativas = len([o for o in resultado if o.get('tipo') == 'negativa'])
+        neutrales = len([o for o in resultado if o.get('tipo') == 'neutral'])
+        
+        return jsonify({
+            'success': True,
+            'observations': [serialize_doc(o) for o in resultado],
+            'statistics': {
+                'total': total,
+                'positivas': positivas,
+                'negativas': negativas,
+                'neutrales': neutrales
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_teacher_observations: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/teacher/observations', methods=['POST'])
+@token_required('docente')
+def create_observation():
+    """Crear una nueva observación"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
+        
+        # Validar campos requeridos
+        required_fields = ['student_id', 'course_id', 'tipo', 'descripcion']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'El campo {field} es requerido'
+                }), 400
+        
+        # Obtener ID del docente desde el token
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar docente
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        if not docente:
+            teacher_obj_id = string_to_objectid(teacher_sub)
+            if teacher_obj_id:
+                docente = usuarios.find_one({
+                    '_id': teacher_obj_id,
+                    'rol': 'docente',
+                    'activo': True
+                })
+        
+        if not docente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
+        
+        # Convertir IDs
+        estudiante_id = string_to_objectid(data['student_id'])
+        curso_id = string_to_objectid(data['course_id'])
+        
+        if not estudiante_id or not curso_id:
+            return jsonify({'success': False, 'error': 'IDs inválidos'}), 400
+        
+        # Verificar que el estudiante existe
+        estudiante = usuarios.find_one({'_id': estudiante_id, 'rol': 'estudiante'})
+        if not estudiante:
+            return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
+        
+        # Verificar que el curso existe y pertenece al docente
+        cursos = get_cursos_collection()
+        curso = cursos.find_one({'_id': curso_id})
+        
+        if not curso:
+            return jsonify({'success': False, 'error': 'Curso no encontrado'}), 404
+        
+        if curso.get('id_docente') != docente['_id']:
+            return jsonify({
+                'success': False,
+                'error': 'No tienes permiso para registrar observaciones en este curso'
+            }), 403
+        
+        # Validar tipo
+        tipo = data['tipo'].lower()
+        if tipo not in ['positiva', 'negativa', 'neutral']:
+            return jsonify({'success': False, 'error': 'Tipo de observación inválido'}), 400
+        
+        # Crear documento de observación
+        observaciones = get_observaciones_collection()
+        
+        nueva_observacion = {
+            'id_estudiante': estudiante_id,
+            'id_docente': docente['_id'],
+            'id_curso': curso_id,
+            'tipo': tipo,
+            'descripcion': data['descripcion'],
+            'fecha': datetime.utcnow(),
+            'seguimiento': data.get('seguimiento', ''),
+            'categoria': data.get('categoria', 'otra'),
+            'gravedad': data.get('gravedad', 'leve') if tipo == 'negativa' else None,
+            'notificado_acudiente': data.get('notificado_acudiente', False),
+            'fecha_notificacion': datetime.utcnow() if data.get('notificado_acudiente') else None,
+            'estudiante_info': {
+                'nombres': estudiante.get('nombres', ''),
+                'apellidos': estudiante.get('apellidos', ''),
+                'codigo_est': estudiante.get('codigo_est', '')
+            },
+            'docente_info': {
+                'nombres': docente.get('nombres', ''),
+                'apellidos': docente.get('apellidos', ''),
+                'especialidad': docente.get('especialidad', '')
+            },
+            'curso_info': {
+                'nombre_curso': curso.get('nombre_curso', ''),
+                'codigo_curso': curso.get('codigo_curso', ''),
+                'grado': curso.get('grado', '')
+            },
+            'archivos_adjuntos': data.get('archivos_adjuntos', []),
+            'creado_en': Timestamp(int(datetime.utcnow().timestamp()), 0),
+            'actualizado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
+        }
+        
+        # Insertar observación
+        resultado = observaciones.insert_one(nueva_observacion)
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=docente['_id'],
+            accion='crear_observacion',
+            entidad_afectada='observaciones',
+            id_entidad=str(resultado.inserted_id),
+            detalles=f"Observación {tipo} creada para {estudiante.get('nombres')} {estudiante.get('apellidos')}"
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Observación creada exitosamente',
+            'observation_id': str(resultado.inserted_id)
+        }), 201
+        
+    except Exception as e:
+        print(f"❌ Error en create_observation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/teacher/observations/<observation_id>', methods=['PUT'])
+@token_required('docente')
+def update_observation(observation_id):
+    """Actualizar una observación existente"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
+        
+        # Convertir observation_id
+        obs_obj_id = string_to_objectid(observation_id)
+        if not obs_obj_id:
+            return jsonify({'success': False, 'error': 'ID de observación inválido'}), 400
+        
+        # Obtener ID del docente desde el token
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar docente
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        if not docente:
+            teacher_obj_id = string_to_objectid(teacher_sub)
+            if teacher_obj_id:
+                docente = usuarios.find_one({
+                    '_id': teacher_obj_id,
+                    'rol': 'docente',
+                    'activo': True
+                })
+        
+        if not docente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
+        
+        observaciones = get_observaciones_collection()
+        
+        # Verificar que la observación existe y pertenece al docente
+        observacion = observaciones.find_one({'_id': obs_obj_id})
+        
+        if not observacion:
+            return jsonify({'success': False, 'error': 'Observación no encontrada'}), 404
+        
+        if observacion.get('id_docente') != docente['_id']:
+            return jsonify({
+                'success': False,
+                'error': 'No tienes permiso para editar esta observación'
+            }), 403
+        
+        # Preparar actualización
+        actualizacion = {
+            'actualizado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
+        }
+        
+        # Campos actualizables
+        campos_permitidos = ['descripcion', 'seguimiento', 'tipo', 'categoria', 'gravedad', 
+                            'notificado_acudiente']
+        
+        for campo in campos_permitidos:
+            if campo in data:
+                actualizacion[campo] = data[campo]
+        
+        # Si se marca como notificado, agregar fecha
+        if data.get('notificado_acudiente') and not observacion.get('fecha_notificacion'):
+            actualizacion['fecha_notificacion'] = datetime.utcnow()
+        
+        # Actualizar observación
+        observaciones.update_one(
+            {'_id': obs_obj_id},
+            {'$set': actualizacion}
+        )
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=docente['_id'],
+            accion='actualizar_observacion',
+            entidad_afectada='observaciones',
+            id_entidad=observation_id,
+            detalles=f"Observación actualizada"
+        )
+        
+        # Obtener observación actualizada
+        obs_actualizada = observaciones.find_one({'_id': obs_obj_id})
+        
+        return jsonify({
+            'success': True,
+            'message': 'Observación actualizada exitosamente',
+            'observation': serialize_doc(obs_actualizada)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en update_observation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/teacher/observations/<observation_id>', methods=['DELETE'])
+@token_required('docente')
+def delete_observation(observation_id):
+    """Eliminar una observación"""
+    try:
+        # Convertir observation_id
+        obs_obj_id = string_to_objectid(observation_id)
+        if not obs_obj_id:
+            return jsonify({'success': False, 'error': 'ID de observación inválido'}), 400
+        
+        # Obtener ID del docente desde el token
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_sub = g.userinfo.get('sub')
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar docente
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        if not docente:
+            teacher_obj_id = string_to_objectid(teacher_sub)
+            if teacher_obj_id:
+                docente = usuarios.find_one({
+                    '_id': teacher_obj_id,
+                    'rol': 'docente',
+                    'activo': True
+                })
+        
+        if not docente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
+        
+        observaciones = get_observaciones_collection()
+        
+        # Verificar que la observación existe y pertenece al docente
+        observacion = observaciones.find_one({'_id': obs_obj_id})
+        
+        if not observacion:
+            return jsonify({'success': False, 'error': 'Observación no encontrada'}), 404
+        
+        if observacion.get('id_docente') != docente['_id']:
+            return jsonify({
+                'success': False,
+                'error': 'No tienes permiso para eliminar esta observación'
+            }), 403
+        
+        # Eliminar observación
+        observaciones.delete_one({'_id': obs_obj_id})
+        
+        # Registrar auditoría
+        registrar_auditoria(
+            id_usuario=docente['_id'],
+            accion='eliminar_observacion',
+            entidad_afectada='observaciones',
+            id_entidad=observation_id,
+            detalles=f"Observación eliminada"
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Observación eliminada exitosamente'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en delete_observation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/teacher/observations/student/<student_id>', methods=['GET'])
+@token_required('docente')
+def get_student_observations(student_id):
+    """Obtener historial de observaciones de un estudiante específico"""
+    try:
+        # Convertir student_id
+        estudiante_obj_id = string_to_objectid(student_id)
+        if not estudiante_obj_id:
+            return jsonify({'success': False, 'error': 'ID de estudiante inválido'}), 400
+        
+        observaciones = get_observaciones_collection()
+        
+        # Obtener observaciones del estudiante ordenadas por fecha
+        resultado = list(observaciones.find(
+            {'id_estudiante': estudiante_obj_id}
+        ).sort('fecha', -1))
+        
+        # Calcular estadísticas del estudiante
+        total = len(resultado)
+        positivas = len([o for o in resultado if o.get('tipo') == 'positiva'])
+        negativas = len([o for o in resultado if o.get('tipo') == 'negativa'])
+        neutrales = len([o for o in resultado if o.get('tipo') == 'neutral'])
+        
+        return jsonify({
+            'success': True,
+            'observations': [serialize_doc(o) for o in resultado],
+            'statistics': {
+                'total': total,
+                'positivas': positivas,
+                'negativas': negativas,
+                'neutrales': neutrales
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_student_observations: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
 # Manejo de errores
 @app.errorhandler(404)
 def not_found(error):

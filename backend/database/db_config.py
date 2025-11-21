@@ -93,8 +93,12 @@ def get_auditoria_collection():
 def get_asistencia_collection():
     """Obtener la colección de asistencia"""
     return DatabaseConfig.get_collection('asistencia')
-# Funciones de utilidad para conversión de datos
+# Agregar después de get_asistencia_collection():
 
+def get_observaciones_collection():
+    """Obtener la colección de observaciones"""
+    return DatabaseConfig.get_collection('observaciones')
+# Funciones de utilidad para conversión de datos
 def serialize_doc(doc):
     """Convierte un documento MongoDB a formato JSON serializable"""
     if doc is None:
