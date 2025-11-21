@@ -366,17 +366,16 @@ def get_student_profile():
 @app.route('/student/courses', methods=['GET'])
 @token_required('estudiante')
 def get_student_courses():
-    """Obtener cursos matriculados del estudiante"""
+    """Obtener cursos matriculados del estudiante con calificaciones por periodo"""
     try:
-        # ✅ SOLO obtener email del token
         student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
         
         if not student_email:
-            return jsonify({'success': False, 'error': 'Email no encontrado en el token'}), 400
+            return jsonify({'success': False, 'error': 'Email no encontrado'}), 400
         
         usuarios = get_usuarios_collection()
+        matriculas = get_matriculas_collection()
         
-        # ✅ Buscar SOLO por email
         estudiante = usuarios.find_one({
             'correo': student_email,
             'rol': 'estudiante',
@@ -386,9 +385,6 @@ def get_student_courses():
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
         
-        matriculas = get_matriculas_collection()
-        
-        # Obtener matrículas activas
         student_matriculas = list(matriculas.find({
             'id_estudiante': estudiante['_id'],
             'estado': 'activo'
@@ -400,32 +396,59 @@ def get_student_courses():
             docente_info = matricula.get('docente_info', {})
             calificaciones = matricula.get('calificaciones', [])
             
-            # Calcular promedio
-            if calificaciones:
-                promedio = sum(cal.get('nota', 0) for cal in calificaciones) / len(calificaciones)
-            else:
-                promedio = 0.0
+            # ✅ Agrupar calificaciones por periodo
+            calificaciones_por_periodo = {
+                '1': [],
+                '2': [],
+                '3': [],
+                '4': []
+            }
+            
+            for cal in calificaciones:
+                periodo_cal = cal.get('periodo', '1')
+                if periodo_cal in calificaciones_por_periodo:
+                    calificaciones_por_periodo[periodo_cal].append(cal)
+            
+            # ✅ Calcular promedio por periodo
+            promedios_por_periodo = {}
+            for periodo, cals in calificaciones_por_periodo.items():
+                if cals:
+                    total = sum(c.get('nota', 0) * c.get('peso', 0) for c in cals)
+                    total_peso = sum(c.get('peso', 0) for c in cals)
+                    promedios_por_periodo[periodo] = round(total / total_peso, 2) if total_peso > 0 else 0
+                else:
+                    promedios_por_periodo[periodo] = 0
+            
+            # Promedio general (todos los periodos)
+            promedios_validos = [p for p in promedios_por_periodo.values() if p > 0]
+            promedio_general = round(sum(promedios_validos) / len(promedios_validos), 2) if promedios_validos else 0
             
             cursos.append({
                 'curso_id': str(matricula.get('id_curso')),
                 'nombre_curso': curso_info.get('nombre_curso', 'N/A'),
                 'codigo_curso': curso_info.get('codigo_curso', 'N/A'),
                 'grado': curso_info.get('grado', 'N/A'),
-                'periodo': matricula.get('periodo', '1'),
                 'docente': f"{docente_info.get('nombres', '')} {docente_info.get('apellidos', '')}",
-                'promedio': round(promedio, 2),
-                'total_calificaciones': len(calificaciones)
+                'promedio_general': promedio_general,
+                'promedios_por_periodo': promedios_por_periodo,  # ✅ NUEVO
+                'calificaciones_por_periodo': {  # ✅ NUEVO
+                    periodo: serialize_doc(cals) 
+                    for periodo, cals in calificaciones_por_periodo.items()
+                }
             })
         
         return jsonify({
             'success': True,
-            'courses': cursos
+            'courses': cursos,
+            'count': len(cursos)
         }), 200
         
     except Exception as e:
         print(f"❌ Error en get_student_courses: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-    
+        
 @app.route('/student/certificado/<tipo>', methods=['GET'])
 @token_required('estudiante')
 def download_certificado(tipo):
@@ -513,12 +536,12 @@ def download_certificado(tipo):
 @app.route('/student/boletin', methods=['GET'])
 @token_required('estudiante')
 def download_boletin():
-    """Generar boletín de calificaciones en PDF"""
+    """Generar boletín de calificaciones en PDF filtrado por periodo"""
     try:
         # Obtener parámetros
         periodo = request.args.get('periodo', '1')
         
-        # ✅ SOLO obtener email del token
+        # Obtener email del token
         student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
         
         if not student_email:
@@ -526,7 +549,7 @@ def download_boletin():
         
         usuarios = get_usuarios_collection()
         
-        # ✅ Buscar SOLO por email
+        # Buscar estudiante por email
         estudiante = usuarios.find_one({
             'correo': student_email,
             'rol': 'estudiante',
@@ -538,10 +561,9 @@ def download_boletin():
         
         matriculas = get_matriculas_collection()
         
-        # Obtener matrículas del periodo
+        # ✅ Obtener TODAS las matrículas del estudiante (sin filtrar por periodo en la matrícula)
         student_matriculas = list(matriculas.find({
             'id_estudiante': estudiante['_id'],
-            'periodo': periodo,
             'estado': 'activo'
         }))
         
@@ -564,13 +586,13 @@ def download_boletin():
         p.drawString(inch, y_position, f"Código: {estudiante.get('codigo_est')}")
         y_position -= 0.4 * inch
         
-        p.drawString(inch, y_position, f"Periodo: {periodo}")
+        p.drawString(inch, y_position, f"Periodo Académico: {periodo}")
         y_position -= 0.8 * inch
         
         # Tabla de calificaciones
         p.setFont("Helvetica-Bold", 11)
         p.drawString(inch, y_position, "Materia")
-        p.drawString(3 * inch, y_position, "Nota")
+        p.drawString(3 * inch, y_position, "Promedio")
         p.drawString(4 * inch, y_position, "Estado")
         y_position -= 0.3 * inch
         
@@ -578,12 +600,24 @@ def download_boletin():
         total_promedio = 0
         count = 0
         
+        # ✅ FILTRAR CALIFICACIONES POR PERIODO
         for matricula in student_matriculas:
             curso_info = matricula.get('curso_info', {})
             calificaciones = matricula.get('calificaciones', [])
             
-            if calificaciones:
-                promedio = sum(cal.get('nota', 0) for cal in calificaciones) / len(calificaciones)
+            # ✅ Filtrar solo calificaciones del periodo seleccionado
+            calificaciones_periodo = [
+                cal for cal in calificaciones 
+                if cal.get('periodo') == periodo
+            ]
+            
+            # Solo mostrar cursos con calificaciones en este periodo
+            if calificaciones_periodo:
+                # Calcular promedio ponderado del periodo
+                total = sum(cal.get('nota', 0) * cal.get('peso', 0) for cal in calificaciones_periodo)
+                total_peso = sum(cal.get('peso', 0) for cal in calificaciones_periodo)
+                promedio = round(total / total_peso, 2) if total_peso > 0 else 0
+                
                 estado = 'Aprobado' if promedio >= 3.0 else 'Reprobado'
                 
                 p.drawString(inch, y_position, curso_info.get('nombre_curso', 'N/A'))
@@ -594,12 +628,16 @@ def download_boletin():
                 total_promedio += promedio
                 count += 1
         
-        # Promedio general
+        # Promedio general del periodo
         if count > 0:
             promedio_general = total_promedio / count
             y_position -= 0.5 * inch
             p.setFont("Helvetica-Bold", 12)
-            p.drawString(inch, y_position, f"Promedio General: {promedio_general:.2f}")
+            p.drawString(inch, y_position, f"Promedio General del Periodo {periodo}: {promedio_general:.2f}")
+        else:
+            y_position -= 0.5 * inch
+            p.setFont("Helvetica", 11)
+            p.drawString(inch, y_position, "No hay calificaciones registradas para este periodo")
         
         # Fecha
         p.setFont("Helvetica", 10)

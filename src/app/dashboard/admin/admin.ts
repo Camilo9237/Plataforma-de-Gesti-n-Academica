@@ -8,7 +8,7 @@ import { ApiService } from '../../services/api.service';
   standalone: true,
   imports: [
     CommonModule,
-    RouterModule  // ✅ Agregar RouterModule aquí
+    RouterModule  
   ],
   templateUrl: './admin.html',
   styleUrls: ['./admin.css']

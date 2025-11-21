@@ -87,16 +87,25 @@ export default class BoletinesComponent implements OnInit {
       }
     });
   }
-
-  getCursosDelPeriodo() {
-    return this.courses.filter(c => c.periodo === this.periodoSeleccionado);
-  }
-
-  getPromedioGeneral(): number {
-    const cursosDelPeriodo = this.getCursosDelPeriodo();
-    if (cursosDelPeriodo.length === 0) return 0;
+getCursosDelPeriodo() {
+  return this.courses.map(curso => {
+    // Obtener promedio específico del periodo seleccionado
+    const promedioPeriodo = curso.promedios_por_periodo 
+      ? curso.promedios_por_periodo[this.periodoSeleccionado] || 0
+      : curso.promedio_general || 0;
     
-    const suma = cursosDelPeriodo.reduce((acc, c) => acc + (c.promedio || 0), 0);
-    return Number((suma / cursosDelPeriodo.length).toFixed(2));
-  }
+    return {
+      ...curso,
+      promedio: promedioPeriodo  // ✅ Usar promedio del periodo
+    };
+  }).filter(curso => curso.promedio > 0); // Solo mostrar cursos con calificaciones
+}
+
+getPromedioGeneral(): number {
+  const cursosDelPeriodo = this.getCursosDelPeriodo();
+  if (cursosDelPeriodo.length === 0) return 0;
+  
+  const suma = cursosDelPeriodo.reduce((acc, c) => acc + (c.promedio || 0), 0);
+  return Number((suma / cursosDelPeriodo.length).toFixed(2));
+}
 }

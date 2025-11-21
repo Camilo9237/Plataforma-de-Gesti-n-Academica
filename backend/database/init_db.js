@@ -110,20 +110,24 @@ db.createCollection("matriculas", {
           enum: ["activo", "finalizado", "retirado", "pendiente"], // 🆕 Agregado "pendiente"
           description: "Estado de la matrícula"
         },
-        calificaciones: {
-          bsonType: "array",
-          items: {
-            bsonType: "object",
-            properties: {
-              tipo: { bsonType: "string" },
-              nota: { bsonType: ["double", "int"] },  // ✅ Acepta ambos tipos
-              nota_maxima: { bsonType: ["double", "int"] },  // ✅ Acepta ambos tipos
-              peso: { bsonType: ["double", "int"] },  // ✅ Acepta ambos tipos
-              fecha_eval: { bsonType: "date" },
-              comentarios: { bsonType: "string" }
-            }
-          }
-        },
+        // Busca la sección de calificaciones (alrededor de línea 111) y reemplaza con:
+
+calificaciones: {
+  bsonType: "array",
+  items: {
+    bsonType: "object",
+    required: ["tipo", "nota", "peso", "fecha_eval", "periodo"], // ✅ AGREGAR periodo
+    properties: {
+      tipo: { bsonType: "string" },
+      nota: { bsonType: ["double", "int"] },
+      nota_maxima: { bsonType: ["double", "int"] },
+      peso: { bsonType: ["double", "int"] },
+      fecha_eval: { bsonType: "date" },
+      periodo: { bsonType: "string", enum: ["1", "2", "3", "4"] }, // ✅ NUEVO CAMPO
+      comentarios: { bsonType: "string" }
+    }
+  }
+},
         estudiante_info: {
           bsonType: "object",
           properties: {

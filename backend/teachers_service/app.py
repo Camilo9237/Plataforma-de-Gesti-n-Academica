@@ -806,23 +806,20 @@ def get_course_grades(course_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500    
+
 @app.route('/teacher/grades', methods=['POST'])
 @token_required('docente')
 def add_grade():
-    """Agregar una calificación a un estudiante"""
+    """Agregar una calificación a un estudiante CON PERIODO"""
     try:
         data = request.get_json()
         
-        if not data:
-            return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
-        
-        # Validar campos requeridos
-        required_fields = ['enrollment_id', 'tipo', 'nota', 'peso']
+        required_fields = ['enrollment_id', 'tipo', 'nota', 'peso', 'periodo']  # ✅ AGREGAR periodo
         for field in required_fields:
             if field not in data:
                 return jsonify({
                     'success': False,
-                    'error': f'El campo {field} es requerido'
+                    'error': f'Campo {field} requerido'
                 }), 400
         
         # Validar nota
@@ -858,7 +855,8 @@ def add_grade():
             'nota': nota,
             'nota_maxima': nota_maxima,
             'peso': peso,
-            'fecha_eval': datetime.utcnow(),
+            'periodo': data['periodo'],  # ✅ AGREGAR PERIODO
+            'fecha_eval': Timestamp(int(datetime.utcnow().timestamp()), 0),
             'comentarios': data.get('comentarios', '')
         }
         

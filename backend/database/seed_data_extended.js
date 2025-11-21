@@ -349,25 +349,30 @@ print("✔ 9 Cursos adicionales creados (Total: 13)");
 // Reemplazar esta función (línea ~360):
 // Reemplazar la función generarCalificaciones() completamente (línea ~347):
 
+// ✅ GENERAR CALIFICACIONES CON PERIODO
 function generarCalificaciones() {
   const tipos = ["Parcial", "Taller", "Quiz"];
   const calificaciones = [];
   
-  tipos.forEach((tipo, index) => {
-    const nota = Math.random() * 2 + 3; // Entre 3.0 y 5.0
-    calificaciones.push({
-      tipo: tipo,
-      nota: Number(nota.toFixed(1)),  // ✅ Fuerza double
-      nota_maxima: Number(5.0),        // ✅ Fuerza double explícitamente
-      peso: Number(0.33),              // ✅ Fuerza double explícitamente
-      fecha_eval: new Date(2025, 1, 5 + (index * 15)),
-      comentarios: nota >= 4.0 ? "Buen desempeño" : "Debe reforzar"
+  // ✅ Generar calificaciones para cada periodo
+  for (let periodo = 1; periodo <= 4; periodo++) {
+    tipos.forEach((tipo, index) => {
+      const nota = Math.random() * 2 + 3; // Entre 3.0 y 5.0
+      calificaciones.push({
+        tipo: tipo,
+        nota: Number(nota.toFixed(1)),
+        nota_maxima: Number(5.0),
+        peso: Number(0.33),
+        periodo: String(periodo),  // ✅ AGREGAR PERIODO
+        fecha_eval: new Date(2025, periodo - 1, 5 + (index * 15)), // Fechas distribuidas
+        comentarios: nota >= 4.0 ? "Buen desempeño" : "Debe reforzar"
+      });
     });
-  });
+  }
   
   return calificaciones;
 }
-print("✔ Función generarCalificaciones() definida");
+print("✔ Función generarCalificaciones() con periodos definida");
 
 // Matricular estudiantes en Español 11° A (María López)
 const estudiantesESP11A = [estudiante5, estudiante6, estudiante7, estudiante8, estudiante9, estudiante10];
