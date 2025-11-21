@@ -189,44 +189,6 @@ def dashboard():
     return jsonify({'message': 'Administrator dashboard', 'time': datetime.utcnow().isoformat() + 'Z'})
 
 
-@app.route('/admin/stats')
-@token_required('administrador')
-def admin_stats():
-    """Estadísticas del sistema desde MongoDB"""
-    try:
-        usuarios = get_usuarios_collection()
-        cursos = get_cursos_collection()
-        matriculas = get_matriculas_collection()
-        
-        # Contar estudiantes activos
-        total_students = usuarios.count_documents({'rol': 'estudiante', 'activo': True})
-        
-        # Contar docentes activos
-        active_teachers = usuarios.count_documents({'rol': 'docente', 'activo': True})
-        
-        # Contar matrículas activas
-        total_enrollments = matriculas.count_documents({'estado': 'activo'})
-        
-        # Calcular porcentaje de inscripción (ejemplo: sobre 1500 cupos totales)
-        capacidad_total = 1500
-        enrollment_complete_pct = round((total_enrollments / capacidad_total) * 100, 1) if capacidad_total > 0 else 0
-        
-        # Contar sedes activas (mock, ajustar según tu modelo)
-        active_campuses = 3
-        
-        data = {
-            'total_students': total_students,
-            'enrollment_complete_pct': enrollment_complete_pct,
-            'active_campuses': active_campuses,
-            'active_teachers': active_teachers
-        }
-        
-        return jsonify(data), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
 @app.route('/admin/pending-tasks')
 @token_required('administrador')
 def admin_pending_tasks():
@@ -1730,8 +1692,6 @@ def get_all_teachers_admin():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ...existing code...
-
 @app.route('/admin/stats', methods=['GET'])
 @token_required('administrador')
 def get_admin_stats():
@@ -1741,35 +1701,36 @@ def get_admin_stats():
         cursos = get_cursos_collection()
         matriculas = get_matriculas_collection()
         
-        stats = {
-            'estudiantes': {
-                'activos': usuarios.count_documents({'rol': 'estudiante', 'activo': True}),
-                'inactivos': usuarios.count_documents({'rol': 'estudiante', 'activo': False})
-            },
-            'docentes': {
-                'activos': usuarios.count_documents({'rol': 'docente', 'activo': True}),
-                'inactivos': usuarios.count_documents({'rol': 'docente', 'activo': False})
-            },
-            'cursos': {
-                'activos': cursos.count_documents({'activo': True}),
-                'inactivos': cursos.count_documents({'activo': False})
-            },
-            'matriculas': {
-                'activas': matriculas.count_documents({'estado': 'activo'}),
-                'pendientes': matriculas.count_documents({'estado': 'pendiente'}),
-                'rechazadas': matriculas.count_documents({'estado': 'rechazado'}),
-                'retiradas': matriculas.count_documents({'estado': 'retirado'})
-            }
-        }
+        # Contar estudiantes activos
+        total_estudiantes = usuarios.count_documents({'rol': 'estudiante', 'activo': True})
         
+        # Contar docentes activos
+        total_docentes = usuarios.count_documents({'rol': 'docente', 'activo': True})
+        
+        # Contar cursos activos
+        total_cursos = cursos.count_documents({'activo': True})
+        
+        # Contar matrículas activas
+        total_matriculas = matriculas.count_documents({'estado': 'activo'})
+        
+        # Contar matrículas pendientes
+        matriculas_pendientes = matriculas.count_documents({'estado': 'pendiente'})
+        
+        # ✅ Devolver en el formato que espera el frontend
         return jsonify({
             'success': True,
-            'statistics': stats
+            'total_estudiantes': total_estudiantes,
+            'total_docentes': total_docentes,
+            'total_cursos': total_cursos,
+            'total_matriculas': total_matriculas,
+            'matriculas_pendientes': matriculas_pendientes
         }), 200
         
     except Exception as e:
         print(f"❌ Error en get_admin_stats: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5003, debug=True)

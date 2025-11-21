@@ -124,29 +124,34 @@ export default class AdminComponent implements OnInit {
   }
 
   loadStats(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.api.getAdminStatistics().subscribe({
-        next: (response: any) => {
-          console.log('✅ Estadísticas cargadas:', response);
+  return new Promise((resolve, reject) => {
+    this.api.getAdminStatistics().subscribe({
+      next: (response: any) => {
+        console.log('✅ Estadísticas cargadas:', response);
+        
+        if (response.success) {
+          // ✅ Mapear correctamente los campos
+          this.stats = {
+            totalStudents: response.total_estudiantes || 0,
+            totalCourses: response.total_cursos || 0,
+            totalTeachers: response.total_docentes || 0,
+            totalEnrollments: response.total_matriculas || 0,
+            pendingEnrollments: response.matriculas_pendientes || 0
+          };
           
-          if (response.success) {
-            this.stats = {
-              totalStudents: response.total_estudiantes || 0,
-              totalCourses: response.total_cursos || 0,
-              totalTeachers: response.total_docentes || 0,
-              totalEnrollments: response.total_matriculas || 0,
-              pendingEnrollments: response.matriculas_pendientes || 0
-            };
-          }
-          resolve();
-        },
-        error: (err) => {
-          console.error('❌ Error cargando estadísticas:', err);
-          reject(err);
+          console.log('📊 Stats actualizados:', this.stats);
+        } else {
+          console.warn('⚠️ Respuesta sin success:', response);
         }
-      });
+        resolve();
+      },
+      error: (err: any) => {
+        console.error('❌ Error cargando estadísticas:', err);
+        reject(err);
+      }
     });
-  }
+  });
+}
 
   changeView(view: 'dashboard' | 'students' | 'courses' | 'enrollments'): void {
     this.activeView = view;
