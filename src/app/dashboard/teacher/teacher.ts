@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { Router } from '@angular/router';
+import { AlertService } from '../../services/alert.service';
 
 @Component({
   selector: 'app-dashboard-teacher',
@@ -17,7 +18,7 @@ export default class TeacherComponent implements OnInit {  // ✅ Cambiar a 'exp
   loading = false;
   error: string | null = null;
 
-  constructor(private api: ApiService, private router: Router) {}
+  constructor(private api: ApiService, private router: Router, private alertService: AlertService) {}
 
   ngOnInit() {
     this.loadGroups();
