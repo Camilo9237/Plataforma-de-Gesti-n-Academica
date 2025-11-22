@@ -728,22 +728,24 @@ def get_all_students_admin():
                 {'nombres': {'$regex': search, '$options': 'i'}},
                 {'apellidos': {'$regex': search, '$options': 'i'}},
                 {'codigo_est': {'$regex': search, '$options': 'i'}},
-                {'documento': {'$regex': search, '$options': 'i'}}
+                {'correo': {'$regex': search, '$options': 'i'}}
             ]
         
         # Obtener estudiantes
-        estudiantes = list(usuarios.find(query).sort('apellidos', 1))
+        students = list(usuarios.find(query))
         
+        # ✅ DEVOLVER EN EL CAMPO 'students'
         return jsonify({
             'success': True,
-            'students': serialize_doc(estudiantes),
-            'count': len(estudiantes)
+            'students': serialize_doc(students),  # ✅ Cambiar 'data' por 'students'
+            'count': len(students)
         }), 200
         
     except Exception as e:
         print(f"❌ Error en get_all_students_admin: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/admin/students/<student_id>', methods=['GET'])
 @token_required('administrador')

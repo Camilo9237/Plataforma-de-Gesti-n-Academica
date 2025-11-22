@@ -130,9 +130,33 @@ export class ApiService {
   }
 
   // ===== GRUPOS =====
+  getGroups(): Observable<any> {
+  return this.http.get(`${environment.api.groups}/groups`);
+  }
+
   getGroupById(groupId: string): Observable<any> {
     return this.http.get(`${environment.api.groups}/groups/${groupId}`);
   }
+
+getGroupStudents(groupId: string): Observable<any> {
+  return this.http.get(`${environment.api.groups}/groups/${groupId}/students`);
+}
+
+assignStudentToGroup(groupId: string, studentId: string): Observable<any> {
+  return this.http.post(`${environment.api.groups}/groups/${groupId}/assign-student`, {
+    student_id: studentId
+  });
+}
+
+getGroupSchedule(groupId: string): Observable<any> {
+  return this.http.get(`${environment.api.groups}/groups/${groupId}/schedule`);
+}
+
+createGroupSchedule(groupId: string, horario: any[]): Observable<any> {
+  return this.http.post(`${environment.api.groups}/groups/${groupId}/schedule`, {
+    horario
+  });
+}
 
   // ===== ADMINISTRADORES =====
   getAdministrators() {

@@ -99,7 +99,13 @@ def get_observaciones_collection():
     """Obtener la colección de observaciones"""
     return DatabaseConfig.get_collection('observaciones')
 
+def get_groups_collection():
+    """Obtener la coleccion de grupos"""
+    return DatabaseConfig.get_collection('grupos')
 
+def get_horarios_collection():
+    """Obtener coleccion de horarios"""
+    return DatabaseConfig.get_collection('horarios')
 
 # Funciones de utilidad para conversión de datos
 def serialize_doc(doc):

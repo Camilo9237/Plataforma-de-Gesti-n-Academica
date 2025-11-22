@@ -317,47 +317,78 @@ def get_student_schedule_dashboard():
         return '', 204
     
     try:
-        # Por ahora devolver horario mock
-        # TODO: Implementar sistema de horarios en la base de datos
+        student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
         
-        today = datetime.now().strftime('%Y-%m-%d')
+        if not student_email:
+            return jsonify({'success': False, 'error': 'Email no encontrado'}), 400
+        
+        usuarios = get_usuarios_collection()
+        
+        # Buscar estudiante
+        estudiante = usuarios.find_one({
+            'correo': student_email,
+            'rol': 'estudiante',
+            'activo': True
+        })
+        
+        if not estudiante:
+            return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
+        
+        # ✅ Obtener grupo del estudiante
+        grupo = estudiante.get('grupo')
+        
+        if not grupo:
+            return jsonify({'success': False, 'error': 'Estudiante sin grupo asignado'}), 404
+        
+        # ✅ Buscar horario del grupo
+        from database.db_config import get_horarios_collection
+        horarios = get_horarios_collection()
+        
+        horario_grupo = horarios.find_one({
+            'grupo': grupo,
+            'año_lectivo': '2025'
+        })
+        
+        if not horario_grupo:
+            return jsonify({'success': False, 'error': 'Horario no encontrado para el grupo'}), 404
+        
+        # ✅ Formatear horario
+        horario_formateado = []
+        dias = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes']
+        horas_unicas = sorted(set(
+            f"{bloque['hora_inicio']} - {bloque['hora_fin']}" 
+            for bloque in horario_grupo.get('horario', [])
+        ))
+        
+        for hora in horas_unicas:
+            fila = {'hora': hora}
+            
+            for dia in dias:
+                # Buscar bloque para este día y hora
+                bloque = next((
+                    b for b in horario_grupo.get('horario', [])
+                    if b['dia'] == dia and f"{b['hora_inicio']} - {b['hora_fin']}" == hora
+                ), None)
+                
+                if bloque:
+                    fila[dia] = bloque['curso_info'].get('nombre_curso', 'N/A')
+                else:
+                    fila[dia] = '-'
+            
+            horario_formateado.append(fila)
         
         return jsonify({
-            'date': today,
-            'events': [
-                {
-                    'time': '08:00 - 09:00',
-                    'subject': 'Matemáticas 10° A',
-                    'teacher': 'Prof. Juan Pérez',
-                    'room': 'Aula 201'
-                },
-                {
-                    'time': '09:00 - 10:00',
-                    'subject': 'Español 10° A',
-                    'teacher': 'Prof. María López',
-                    'room': 'Aula 202'
-                },
-                {
-                    'time': '10:00 - 11:00',
-                    'subject': 'Ciencias 10° A',
-                    'teacher': 'Prof. Carlos García',
-                    'room': 'Laboratorio 1'
-                },
-                {
-                    'time': '11:00 - 12:00',
-                    'subject': 'Inglés 10° A',
-                    'teacher': 'Prof. Ana Martínez',
-                    'room': 'Aula 203'
-                }
-            ]
+            'success': True,
+            'grupo': grupo,
+            'horario': horario_formateado,
+            'año_lectivo': '2025'
         }), 200
         
     except Exception as e:
-        print(f"Error en /student/schedule: {e}")
-        return jsonify({
-            'date': datetime.now().strftime('%Y-%m-%d'),
-            'events': []
-        }), 200
+        print(f"❌ Error en get_student_schedule: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/student/profile', methods=['GET'])
 @token_required('estudiante')

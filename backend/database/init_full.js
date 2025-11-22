@@ -18,27 +18,34 @@ db.createCollection("usuarios", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["correo", "rol", "nombres", "apellidos"],
+      required: ["correo", "rol"],
       properties: {
-        correo: { bsonType: "string", description: "Correo único del usuario" },
+        correo: { bsonType: "string" },
         rol: {
-          enum: ["administrador", "docente", "estudiante"],
+          enum: ["estudiante", "docente", "administrador"],
           description: "Rol del usuario"
         },
         nombres: { bsonType: "string" },
         apellidos: { bsonType: "string" },
-        creado_en: { bsonType: "timestamp" },
-        activo: { bsonType: "bool" },
-        telefono: { bsonType: "string" },
         documento: { bsonType: "string" },
-        codigo_empleado: { bsonType: "string" },
-        especialidad: { bsonType: "string" },
-        fecha_ingreso: { bsonType: "date" },
+        telefono: { bsonType: "string" },
+        activo: { bsonType: "bool" },
+        creado_en: { bsonType: "timestamp" },
+        
+        // ✅ CAMPOS ESPECÍFICOS DE ESTUDIANTE
         codigo_est: { bsonType: "string" },
+        grupo: { 
+          bsonType: "string",
+          description: "Grupo del estudiante (ej: 10°A, 11°B)"
+        },
         fecha_nacimiento: { bsonType: "date" },
         direccion: { bsonType: "string" },
         nombre_acudiente: { bsonType: "string" },
-        telefono_acudiente: { bsonType: "string" }
+        telefono_acudiente: { bsonType: "string" },
+        
+        // ✅ CAMPOS ESPECÍFICOS DE DOCENTE
+        especialidad: { bsonType: "string" },
+        titulo: { bsonType: "string" }
       }
     }
   }
@@ -46,12 +53,108 @@ db.createCollection("usuarios", {
 
 db.usuarios.createIndex({ correo: 1 }, { unique: true });
 db.usuarios.createIndex({ rol: 1 });
-db.usuarios.createIndex({ codigo_empleado: 1 }, { sparse: true });
-db.usuarios.createIndex({ codigo_est: 1 }, { sparse: true });
-db.usuarios.createIndex({ documento: 1 }, { sparse: true });
+db.usuarios.createIndex({ codigo_est: 1 }, { unique: true, sparse: true });
+db.usuarios.createIndex({ grupo: 1 }); // ✅ NUEVO ÍNDICE
 
-print("✔ Colección 'usuarios' creada");
+print("✔ Colección 'usuarios' creada con campo 'grupo'");
 
+// ==========================================
+//   COLECCIÓN: GRUPOS
+// ==========================================
+db.createCollection("grupos", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["nombre_grupo", "grado", "jornada"],
+      properties: {
+        nombre_grupo: { 
+          bsonType: "string",
+          description: "Nombre del grupo (ej: 10°A, 11°B)"
+        },
+        grado: { 
+          bsonType: "string",
+          description: "Grado (6, 7, 8, 9, 10, 11)"
+        },
+        jornada: {
+          enum: ["mañana", "tarde"],
+          description: "Jornada del grupo"
+        },
+        anio_lectivo: { 
+          bsonType: "string",
+          description: "Año escolar (ej: 2025)"
+        },
+        director_grupo: { 
+          bsonType: "objectId",
+          description: "ID del docente director de grupo"
+        },
+        capacidad_max: { 
+          bsonType: "int",
+          description: "Capacidad máxima de estudiantes"
+        },
+        activo: { bsonType: "bool" },
+        creado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+db.grupos.createIndex({ nombre_grupo: 1, anio_lectivo: 1 }, { unique: true });
+db.grupos.createIndex({ grado: 1 });
+
+print("✔ Colección 'grupos' creada");
+// ==========================================
+//   COLECCIÓN: HORARIOS
+// ==========================================
+db.createCollection("horarios", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["grupo", "anio_lectivo", "horario"],
+      properties: {
+        grupo: { 
+          bsonType: "string",
+          description: "Nombre del grupo (ej: 10°A)"
+        },
+        anio_lectivo: { bsonType: "string" },
+        horario: {
+          bsonType: "array",
+          description: "Bloques de horario",
+          items: {
+            bsonType: "object",
+            required: ["hora_inicio", "hora_fin", "dia"],
+            properties: {
+              hora_inicio: { bsonType: "string" },
+              hora_fin: { bsonType: "string" },
+              dia: {
+                enum: ["lunes", "martes", "miércoles", "jueves", "viernes"],
+                description: "Día de la semana"
+              },
+              id_curso: { 
+                bsonType: "objectId",
+                description: "Curso que se dicta en este bloque"
+              },
+              curso_info: {
+                bsonType: "object",
+                properties: {
+                  nombre_curso: { bsonType: "string" },
+                  codigo_curso: { bsonType: "string" },
+                  docente_nombres: { bsonType: "string" },
+                  salon: { bsonType: "string" }
+                }
+              }
+            }
+          }
+        },
+        creado_en: { bsonType: "timestamp" },
+        actualizado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+db.horarios.createIndex({ grupo: 1, anio_lectivo: 1 }, { unique: true });
+
+print("✔ Colección 'horarios' creada");
 // ==========================================
 //   COLECCIÓN: CURSOS
 // ==========================================
@@ -969,6 +1072,277 @@ db.auditoria.insertOne({
 });
 
 print("✔ Registro de auditoría creado");
+// ==========================================
+//   SEED DATA: GRUPOS Y HORARIOS
+// ==========================================
+
+
+print("\n🎓 Creando grupos...");
+
+// Obtener docentes para directores de grupo
+const docente1 = db.usuarios.findOne({correo: "juan.perez@colegio.edu.co"})._id;
+const docente2 = db.usuarios.findOne({correo: "maria.lopez@colegio.edu.co"})._id;
+const docente3 = db.usuarios.findOne({correo: "carlos.garcia@colegio.edu.co"})._id;
+
+// ==========================================
+//   GRUPOS GRADO 10
+// ==========================================
+
+const grupo10A = db.grupos.insertOne({
+  nombre_grupo: "10°A",
+  grado: "10",
+  jornada: "mañana",
+  anio_lectivo: "2025",
+  director_grupo: docente1,
+  capacidad_max: NumberInt(40),
+  activo: true,
+  creado_en: Timestamp()
+}).insertedId;
+
+const grupo10B = db.grupos.insertOne({
+  nombre_grupo: "10°B",
+  grado: "10",
+  jornada: "mañana",
+  anio_lectivo: "2025",
+  director_grupo: docente2,
+  capacidad_max: NumberInt(38),
+  activo: true,
+  creado_en: Timestamp()
+}).insertedId;
+
+print("✔ Grupos de grado 10 creados");
+
+// ==========================================
+//   GRUPOS GRADO 11
+// ==========================================
+
+const grupo11A = db.grupos.insertOne({
+  nombre_grupo: "11°A",
+  grado: "11",
+  jornada: "mañana",
+  anio_lectivo: "2025",
+  director_grupo: docente3,
+  capacidad_max: NumberInt(35),
+  activo: true,
+  creado_en: Timestamp()
+}).insertedId;
+
+const grupo11B = db.grupos.insertOne({
+  nombre_grupo: "11°B",
+  grado: "11",
+  jornada: "mañana",
+  anio_lectivo: "2025",
+  director_grupo: docente1,
+  capacidad_max: NumberInt(35),
+  activo: true,
+  creado_en: Timestamp()
+}).insertedId;
+
+print("✔ Grupos de grado 11 creados");
+
+// ==========================================
+//   ASIGNAR ESTUDIANTES A GRUPOS
+// ==========================================
+
+// Grupo 10°A
+db.usuarios.updateMany(
+  { codigo_est: { $in: ["EST001", "EST002", "EST003", "EST004"] } },
+  { $set: { grupo: "10°A" } }
+);
+
+// Grupo 10°B
+db.usuarios.updateMany(
+  { codigo_est: { $in: ["EST011", "EST012"] } },
+  { $set: { grupo: "10°B" } }
+);
+
+// Grupo 11°A
+db.usuarios.updateMany(
+  { codigo_est: { $in: ["EST005", "EST006", "EST007", "EST008"] } },
+  { $set: { grupo: "11°A" } }
+);
+
+// Grupo 11°B
+db.usuarios.updateMany(
+  { codigo_est: { $in: ["EST009", "EST010"] } },
+  { $set: { grupo: "11°B" } }
+);
+
+print("✔ Estudiantes asignados a grupos");
+
+// ==========================================
+//   ACTUALIZAR CURSOS CON CAMPO GRUPO
+// ==========================================
+
+// Los cursos ahora pertenecen a un grupo específico
+db.cursos.updateOne(
+  { codigo_curso: "MAT10A" },
+  { $set: { grupo: "10°A" } }
+);
+
+db.cursos.updateOne(
+  { codigo_curso: "ESP10A" },
+  { $set: { grupo: "10°A" } }
+);
+
+db.cursos.updateOne(
+  { codigo_curso: "CIE10A" },
+  { $set: { grupo: "10°A" } }
+);
+
+db.cursos.updateOne(
+  { codigo_curso: "ESP10B" },
+  { $set: { grupo: "10°B" } }
+);
+
+db.cursos.updateOne(
+  { codigo_curso: "ESP11A" },
+  { $set: { grupo: "11°A" } }
+);
+
+db.cursos.updateOne(
+  { codigo_curso: "LIT11A" },
+  { $set: { grupo: "11°A" } }
+);
+
+db.cursos.updateOne(
+  { codigo_curso: "MAT11A" },
+  { $set: { grupo: "11°A" } }
+);
+
+print("✔ Cursos actualizados con campo 'grupo'");
+
+// ==========================================
+//   CREAR HORARIOS POR GRUPO
+// ==========================================
+
+// Horario para 10°A
+db.horarios.insertOne({
+  grupo: "10°A",
+  anio_lectivo: "2025",
+  horario: [
+    // LUNES
+    {
+      hora_inicio: "07:00",
+      hora_fin: "08:00",
+      dia: "lunes",
+      id_curso: db.cursos.findOne({codigo_curso: "MAT10A"})._id,
+      curso_info: {
+        nombre_curso: "Matemáticas 10°A",
+        codigo_curso: "MAT10A",
+        docente_nombres: "Juan Pérez",
+        salon: "Aula 201"
+      }
+    },
+    {
+      hora_inicio: "08:00",
+      hora_fin: "09:00",
+      dia: "lunes",
+      id_curso: db.cursos.findOne({codigo_curso: "ESP10A"})._id,
+      curso_info: {
+        nombre_curso: "Español 10°A",
+        codigo_curso: "ESP10A",
+        docente_nombres: "María López",
+        salon: "Aula 202"
+      }
+    },
+    {
+      hora_inicio: "09:00",
+      hora_fin: "10:00",
+      dia: "lunes",
+      id_curso: db.cursos.findOne({codigo_curso: "CIE10A"})._id,
+      curso_info: {
+        nombre_curso: "Ciencias 10°A",
+        codigo_curso: "CIE10A",
+        docente_nombres: "Carlos García",
+        salon: "Laboratorio 1"
+      }
+    },
+    {
+      hora_inicio: "10:00",
+      hora_fin: "10:30",
+      dia: "lunes",
+      curso_info: {
+        nombre_curso: "DESCANSO",
+        codigo_curso: "DESCANSO"
+      }
+    },
+    // MARTES
+    {
+      hora_inicio: "07:00",
+      hora_fin: "08:00",
+      dia: "martes",
+      id_curso: db.cursos.findOne({codigo_curso: "ESP10A"})._id,
+      curso_info: {
+        nombre_curso: "Español 10°A",
+        codigo_curso: "ESP10A",
+        docente_nombres: "María López",
+        salon: "Aula 202"
+      }
+    },
+    {
+      hora_inicio: "08:00",
+      hora_fin: "09:00",
+      dia: "martes",
+      id_curso: db.cursos.findOne({codigo_curso: "MAT10A"})._id,
+      curso_info: {
+        nombre_curso: "Matemáticas 10°A",
+        codigo_curso: "MAT10A",
+        docente_nombres: "Juan Pérez",
+        salon: "Aula 201"
+      }
+    }
+    // Agregar más bloques según necesites...
+  ],
+  creado_en: Timestamp(),
+  actualizado_en: Timestamp()
+});
+
+print("✔ Horario para 10°A creado");
+
+// Horario para 11°A
+db.horarios.insertOne({
+  grupo: "11°A",
+  anio_lectivo: "2025",
+  horario: [
+    {
+      hora_inicio: "07:00",
+      hora_fin: "08:00",
+      dia: "lunes",
+      id_curso: db.cursos.findOne({codigo_curso: "MAT11A"})._id,
+      curso_info: {
+        nombre_curso: "Matemáticas 11°A",
+        codigo_curso: "MAT11A",
+        docente_nombres: "Juan Pérez",
+        salon: "Aula 301"
+      }
+    },
+    {
+      hora_inicio: "08:00",
+      hora_fin: "09:00",
+      dia: "lunes",
+      id_curso: db.cursos.findOne({codigo_curso: "ESP11A"})._id,
+      curso_info: {
+        nombre_curso: "Español 11°A",
+        codigo_curso: "ESP11A",
+        docente_nombres: "María López",
+        salon: "Aula 302"
+      }
+    }
+    // Agregar más bloques...
+  ],
+  creado_en: Timestamp(),
+  actualizado_en: Timestamp()
+});
+
+print("✔ Horario para 11°A creado");
+
+print("\n✅ Grupos y horarios creados exitosamente");
+print("📊 Resumen:");
+print("   - Grupos creados: " + db.grupos.countDocuments());
+print("   - Estudiantes con grupo: " + db.usuarios.countDocuments({ grupo: { $exists: true } }));
+print("   - Cursos con grupo: " + db.cursos.countDocuments({ grupo: { $exists: true } }));
+print("   - Horarios creados: " + db.horarios.countDocuments());
 
 // ==========================================
 //   RESUMEN FINAL

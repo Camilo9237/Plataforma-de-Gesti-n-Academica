@@ -11,51 +11,149 @@ use colegio;
 // ==========================================
 //   COLECCIÓN: USUARIOS
 // ==========================================
+// Busca la sección de usuarios (alrededor de línea 19) y actualiza:
+
 db.createCollection("usuarios", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["correo", "rol", "nombres", "apellidos"],
+      required: ["correo", "rol"],
       properties: {
-        correo: { bsonType: "string", description: "Correo único del usuario" },
+        correo: { bsonType: "string" },
         rol: {
-          enum: ["administrador", "docente", "estudiante"],
+          enum: ["estudiante", "docente", "administrador"],
           description: "Rol del usuario"
         },
         nombres: { bsonType: "string" },
         apellidos: { bsonType: "string" },
-        creado_en: { bsonType: "timestamp" },
-        activo: { bsonType: "bool" },
-
-        // Datos adicionales por rol
+        documento: { bsonType: "string" },
         telefono: { bsonType: "string" },
-        documento: { bsonType: "string" }, // 🆕 AGREGADO
-
-        // Docente
-        codigo_empleado: { bsonType: "string" },
-        especialidad: { bsonType: "string" },
-        fecha_ingreso: { bsonType: "date" },
-
-        // Estudiante
+        activo: { bsonType: "bool" },
+        creado_en: { bsonType: "timestamp" },
+        
+        // ✅ CAMPOS ESPECÍFICOS DE ESTUDIANTE
         codigo_est: { bsonType: "string" },
+        grupo: { 
+          bsonType: "string",
+          description: "Grupo del estudiante (ej: 10°A, 11°B)"
+        },
         fecha_nacimiento: { bsonType: "date" },
         direccion: { bsonType: "string" },
         nombre_acudiente: { bsonType: "string" },
-        telefono_acudiente: { bsonType: "string" }
+        telefono_acudiente: { bsonType: "string" },
+        
+        // ✅ CAMPOS ESPECÍFICOS DE DOCENTE
+        especialidad: { bsonType: "string" },
+        titulo: { bsonType: "string" }
       }
     }
   }
 });
 
-// Índices
 db.usuarios.createIndex({ correo: 1 }, { unique: true });
 db.usuarios.createIndex({ rol: 1 });
-db.usuarios.createIndex({ codigo_empleado: 1 }, { sparse: true });
-db.usuarios.createIndex({ codigo_est: 1 }, { sparse: true });
-db.usuarios.createIndex({ documento: 1 }, { sparse: true }); // 🆕 AGREGADO
+db.usuarios.createIndex({ codigo_est: 1 }, { unique: true, sparse: true });
+db.usuarios.createIndex({ grupo: 1 }); // ✅ NUEVO ÍNDICE
 
-print("✔ Colección 'usuarios' creada con índices");
+print("✔ Colección 'usuarios' creada con campo 'grupo'");
 
+// ==========================================
+//   COLECCIÓN: GRUPOS
+// ==========================================
+db.createCollection("grupos", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["nombre_grupo", "grado", "jornada"],
+      properties: {
+        nombre_grupo: { 
+          bsonType: "string",
+          description: "Nombre del grupo (ej: 10°A, 11°B)"
+        },
+        grado: { 
+          bsonType: "string",
+          description: "Grado (6, 7, 8, 9, 10, 11)"
+        },
+        jornada: {
+          enum: ["mañana", "tarde"],
+          description: "Jornada del grupo"
+        },
+        año_lectivo: { 
+          bsonType: "string",
+          description: "Año escolar (ej: 2025)"
+        },
+        director_grupo: { 
+          bsonType: "objectId",
+          description: "ID del docente director de grupo"
+        },
+        capacidad_max: { 
+          bsonType: "int",
+          description: "Capacidad máxima de estudiantes"
+        },
+        activo: { bsonType: "bool" },
+        creado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+db.grupos.createIndex({ nombre_grupo: 1, año_lectivo: 1 }, { unique: true });
+db.grupos.createIndex({ grado: 1 });
+
+print("✔ Colección 'grupos' creada");
+// ==========================================
+//   COLECCIÓN: HORARIOS
+// ==========================================
+db.createCollection("horarios", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["grupo", "año_lectivo", "horario"],
+      properties: {
+        grupo: { 
+          bsonType: "string",
+          description: "Nombre del grupo (ej: 10°A)"
+        },
+        año_lectivo: { bsonType: "string" },
+        horario: {
+          bsonType: "array",
+          description: "Bloques de horario",
+          items: {
+            bsonType: "object",
+            required: ["hora_inicio", "hora_fin", "dia"],
+            properties: {
+              hora_inicio: { bsonType: "string" },
+              hora_fin: { bsonType: "string" },
+              dia: {
+                enum: ["lunes", "martes", "miércoles", "jueves", "viernes"],
+                description: "Día de la semana"
+              },
+              id_curso: { 
+                bsonType: "objectId",
+                description: "Curso que se dicta en este bloque"
+              },
+              curso_info: {
+                bsonType: "object",
+                properties: {
+                  nombre_curso: { bsonType: "string" },
+                  codigo_curso: { bsonType: "string" },
+                  docente_nombres: { bsonType: "string" },
+                  salon: { bsonType: "string" }
+                }
+              }
+            }
+          }
+        },
+        creado_en: { bsonType: "timestamp" },
+        actualizado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+db.horarios.createIndex({ grupo: 1, año_lectivo: 1 }, { unique: true });
+
+print("✔ Colección 'horarios' creada");
 // ==========================================
 //   COLECCIÓN: CURSOS
 // ==========================================

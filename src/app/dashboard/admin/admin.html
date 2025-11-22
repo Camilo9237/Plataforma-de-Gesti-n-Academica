@@ -18,37 +18,27 @@
 
   <!-- Navigation Tabs -->
   <nav class="admin-nav">
-    <button 
-      (click)="changeView('dashboard')" 
-      [class.active]="activeView === 'dashboard'"
-    >
+    <button (click)="changeView('dashboard')" [class.active]="activeView === 'dashboard'">
       <span class="material-icons">dashboard</span>
       Dashboard
     </button>
-    <button 
-      (click)="changeView('students')" 
-      [class.active]="activeView === 'students'"
-    >
+    <button (click)="changeView('students')" [class.active]="activeView === 'students'">
       <span class="material-icons">school</span>
       Estudiantes
     </button>
-    <button 
-      (click)="changeView('courses')" 
-      [class.active]="activeView === 'courses'"
-    >
+    <button (click)="changeView('courses')" [class.active]="activeView === 'courses'">
       <span class="material-icons">class</span>
       Cursos
     </button>
-    <button 
-      (click)="changeView('enrollments')" 
-      [class.active]="activeView === 'enrollments'"
-    >
+    <button routerLink="/dashboard/admin/groups">
+      <span class="material-icons">groups</span>
+      Grupos
+    </button>
+    <button (click)="changeView('enrollments')" [class.active]="activeView === 'enrollments'">
       <span class="material-icons">library_books</span>
       Matrículas
     </button>
-    <button 
-      (click)="goToReports()"
-    >
+    <button (click)="goToReports()">
       <span class="material-icons">assessment</span>
       Reportes
     </button>
@@ -69,7 +59,7 @@
 
   <!-- Content Area -->
   <div *ngIf="!loading && !error" class="content-area">
-    
+
     <!-- DASHBOARD VIEW -->
     <div *ngIf="activeView === 'dashboard'">
       <!-- Statistics Grid -->
@@ -314,10 +304,12 @@
               </span>
             </td>
             <td class="actions">
-              <button class="btn-success" title="Aprobar" (click)="approveEnrollment(enrollment._id)" *ngIf="enrollment.estado === 'pendiente'">
+              <button class="btn-success" title="Aprobar" (click)="approveEnrollment(enrollment._id)"
+                *ngIf="enrollment.estado === 'pendiente'">
                 <span class="material-icons">check</span>
               </button>
-              <button class="btn-danger" title="Rechazar" (click)="rejectEnrollment(enrollment._id)" *ngIf="enrollment.estado === 'pendiente'">
+              <button class="btn-danger" title="Rechazar" (click)="rejectEnrollment(enrollment._id)"
+                *ngIf="enrollment.estado === 'pendiente'">
                 <span class="material-icons">close</span>
               </button>
               <button class="btn-icon danger" title="Eliminar" (click)="deleteEnrollment(enrollment._id)">
