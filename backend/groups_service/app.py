@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from datetime import datetime
 from bson.timestamp import Timestamp
+from keycloak import KeycloakOpenID
 import sys
 import os
 

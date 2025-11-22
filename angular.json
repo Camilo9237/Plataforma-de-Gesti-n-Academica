@@ -71,6 +71,7 @@
           "builder": "@angular-builders/jest:run",
           "options": {
             "tsConfig": "tsconfig.spec.json",
+            "polyfills": ["zone.js", "zone.js/testing"],
             "assets": [
               "src/favicon.ico",
               "src/assets"

@@ -42,3 +42,7 @@ testem.log
 Thumbs.db
 
 /backend/.env
+
+# Jest
+coverage/
+.jest-cache/
