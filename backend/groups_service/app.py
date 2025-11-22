@@ -42,6 +42,24 @@ def handle_preflight():
         }
         response.headers.update(headers)
         return response
+    
+# Keycloak config
+KEYCLOAK_SERVER = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8082')
+KEYCLOAK_CLIENT_ID = os.getenv('KEYCLOAK_CLIENT_ID', '01')
+KEYCLOAK_REALM = os.getenv('KEYCLOAK_REALM', 'plataformaInstitucional')
+KEYCLOAK_CLIENT_SECRET = os.getenv('KEYCLOAK_CLIENT_SECRET', 'wP8EhQnsdaYcCSyFTnD2wu4n0dssApUz')
+
+keycloak_openid = None
+if KeycloakOpenID is not None:
+    try:
+        keycloak_openid = KeycloakOpenID(
+            server_url=KEYCLOAK_SERVER,
+            client_id=KEYCLOAK_CLIENT_ID,
+            realm_name=KEYCLOAK_REALM,
+            client_secret_key=KEYCLOAK_CLIENT_SECRET
+        )
+    except Exception:
+        keycloak_openid = None
 
 
 # ==========================================

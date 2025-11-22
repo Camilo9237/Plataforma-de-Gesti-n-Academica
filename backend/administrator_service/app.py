@@ -1539,52 +1539,99 @@ def report_teacher_workload():
 @app.route('/admin/reports/enrollment-history', methods=['GET'])
 @token_required('administrador')
 def report_enrollment_history():
-    """Reporte: Historial de matrículas por periodo"""
+    """Reporte: Historial de matrículas por mes/año"""
     try:
         matriculas = get_matriculas_collection()
         
         # Filtros opcionales
         year = request.args.get('year')
         
-        # Agregación
-        match_stage = {}
-        if year:
-            match_stage['$expr'] = {
-                '$eq': [{'$year': '$fecha_matricula'}, int(year)]
-            }
+        # ✅ CORREGIR: Agrupar por mes/año en lugar de por 'periodo'
+        pipeline = []
         
-        pipeline = [
-            {'$match': match_stage} if match_stage else {'$match': {}},
-            {'$group': {
-                '_id': {
-                    'periodo': '$periodo',
-                    'estado': '$estado'
-                },
-                'total': {'$sum': 1}
-            }},
-            {'$group': {
-                '_id': '$_id.periodo',
-                'estados': {
-                    '$push': {
-                        'estado': '$_id.estado',
-                        'total': '$total'
+        # Filtro opcional por año
+        if year:
+            pipeline.append({
+                '$match': {
+                    'fecha_matricula': {
+                        '$gte': datetime(int(year), 1, 1),
+                        '$lt': datetime(int(year) + 1, 1, 1)
                     }
-                },
-                'total_general': {'$sum': '$total'}
-            }},
-            {'$sort': {'_id': 1}}
-        ]
+                }
+            })
+        
+        # Agrupar por año y mes
+        pipeline.extend([
+            {
+                '$addFields': {
+                    # Convertir Timestamp a Date si es necesario
+                    'fecha_date': {
+                        '$toDate': '$fecha_matricula'
+                    }
+                }
+            },
+            {
+                '$group': {
+                    '_id': {
+                        'year': {'$year': '$fecha_date'},
+                        'month': {'$month': '$fecha_date'}
+                    },
+                    'total_matriculas': {'$sum': 1},
+                    'por_estado': {
+                        '$push': {
+                            'estado': '$estado',
+                            'estudiante': '$estudiante_info.nombres'
+                        }
+                    }
+                }
+            },
+            {
+                '$sort': {'_id.year': 1, '_id.month': 1}
+            },
+            {
+                '$project': {
+                    '_id': 0,
+                    'periodo': {
+                        '$concat': [
+                            {'$toString': '$_id.month'},
+                            '/',
+                            {'$toString': '$_id.year'}
+                        ]
+                    },
+                    'year': '$_id.year',
+                    'month': '$_id.month',
+                    'total_matriculas': 1
+                }
+            }
+        ])
         
         results = list(matriculas.aggregate(pipeline))
         
+        # Si no hay datos, generar datos mock para los últimos 6 meses
+        if not results:
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            results = []
+            
+            for i in range(5, -1, -1):  # Últimos 6 meses
+                fecha = now - timedelta(days=i*30)
+                results.append({
+                    'periodo': f"{fecha.month}/{fecha.year}",
+                    'year': fecha.year,
+                    'month': fecha.month,
+                    'total_matriculas': 0
+                })
+        
         return jsonify({
             'success': True,
-            'report': serialize_doc(results)
+            'report': results
         }), 200
         
     except Exception as e:
+        print(f"❌ Error en report_enrollment_history: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/admin/reports/academic-statistics', methods=['GET'])
 @token_required('administrador')

@@ -434,3 +434,193 @@
     width: 100%;
   }
 }
+
+/* ==========================================
+   CHART CONTAINER
+========================================== */
+.chart-container {
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e6f0ea;
+  height: 450px;
+  position: relative;
+}
+
+.chart-container canvas {
+  max-height: 400px !important;
+}
+
+/* ==========================================
+   DATA TABLE
+========================================== */
+.data-table-container {
+  background: white;
+  padding: 25px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  border: 1px solid #e6f0ea;
+}
+
+.data-table-container h3 {
+  margin: 0 0 20px;
+  color: #0b6b3a;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.data-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table thead {
+  background: linear-gradient(135deg, #0b6b3a 0%, #2b8b5a 100%);
+  color: white;
+}
+
+.data-table th {
+  padding: 15px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.data-table tbody tr {
+  border-bottom: 1px solid #e6f0ea;
+  transition: background 0.2s ease;
+}
+
+.data-table tbody tr:hover {
+  background: #f8fbf9;
+}
+
+.data-table td {
+  padding: 15px;
+  font-size: 14px;
+  color: #333;
+}
+
+.data-table td.number {
+  font-weight: 700;
+  color: #0b6b3a;
+  text-align: right;
+}
+
+/* ==========================================
+   STATS CARDS GRID
+========================================== */
+.stats-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.stat-card-mini {
+  background: linear-gradient(135deg, #f8fbf9 0%, #eef7ef 100%);
+  border: 1px solid #e6f0ea;
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  transition: transform 0.2s ease;
+}
+
+.stat-card-mini:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(11, 107, 58, 0.1);
+}
+
+.stat-card-mini .material-icons {
+  font-size: 40px;
+  color: #0b6b3a;
+}
+
+.stat-card-mini .stat-label {
+  margin: 0 0 5px;
+  font-size: 12px;
+  color: #666;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.stat-card-mini .stat-value {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #0b6b3a;
+}
+
+/* ==========================================
+   RAW DATA (ACTUALIZADO)
+========================================== */
+.raw-data {
+  margin-top: 20px;
+  background: #f8fbf9;
+  border: 1px solid #e6f0ea;
+  border-radius: 8px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.raw-data summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #0b6b3a;
+  padding: 15px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  transition: background 0.2s ease;
+}
+
+.raw-data summary:hover {
+  background: #f8fbf9;
+  color: #095530;
+}
+
+.raw-data summary .material-icons {
+  font-size: 20px;
+}
+
+.raw-data pre {
+  background: white;
+  padding: 20px;
+  overflow-x: auto;
+  color: #333;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  border-top: 1px solid #e6f0ea;
+}
+
+/* ==========================================
+   RESPONSIVE (ACTUALIZADO)
+========================================== */
+@media (max-width: 768px) {
+  .chart-container {
+    padding: 15px;
+    height: 350px;
+  }
+
+  .data-table {
+    overflow-x: auto;
+  }
+
+  .data-table table {
+    min-width: 500px;
+  }
+
+  .stats-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
