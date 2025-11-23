@@ -59,12 +59,13 @@ module.exports = {
     '**/?(*.)+(spec|test).+(ts|tsx|js)'
   ],
   
-  globals: {
-    'ts-jest': {
-      tsconfig: '<rootDir>/tsconfig.spec.json',
-      stringifyContentPathRegex: '\\.(html|svg)$'
-    }
-  },
+  // REMOVE the globals section as it's deprecated
+  // globals: {
+  //   'ts-jest': {
+  //     tsconfig: '<rootDir>/tsconfig.spec.json',
+  //     stringifyContentPathRegex: '\\.(html|svg)$'
+  //   }
+  // },
   
   snapshotSerializers: [
     'jest-preset-angular/build/serializers/no-ng-attributes',

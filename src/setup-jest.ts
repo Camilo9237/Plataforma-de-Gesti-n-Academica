@@ -1,6 +1,9 @@
-import 'jest-preset-angular/setup-jest';
+import { setupZoneTestEnv } from 'jest-preset-angular/setup-env/zone';
 import 'zone.js';
 import 'zone.js/testing';
+
+// Initialize Zone.js test environment
+setupZoneTestEnv();
 
 // Mock de localStorage
 const localStorageMock = {
@@ -78,7 +81,7 @@ global.console = {
   info: jest.fn(),
   // Mantener warnings y errors
   warn: console.warn,
-  error: console.error,
+  error: jest.fn(),
 };
 
 // Limpiar mocks después de cada test

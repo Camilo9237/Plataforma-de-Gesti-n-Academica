@@ -122,3 +122,5 @@ function matchRole(userRole: string, expectedRole: string): boolean {
 
   return false;
 }
+
+export { decodeToken, matchRole };

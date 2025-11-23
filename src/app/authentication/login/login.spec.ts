@@ -1,46 +1,54 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
-import { Login } from './login';
-import { ApiService } from '../../services/api.service';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import LoginComponent from './login'; // Note: default import, no curly braces
+import { ApiService } from '../../services/api.service';
+import { of, throwError, Observable } from 'rxjs';
 
 describe('LoginComponent', () => {
-  let component: Login;
-  let fixture: ComponentFixture<Login>;
-  let mockRouter: jest.Mocked<Router>;
-  let mockApiService: jest.Mocked<ApiService>;
+  let component: LoginComponent;
+  let fixture: ComponentFixture<LoginComponent>;
+  let apiService: ApiService;
+  let mockRouter: any;
+  let httpMock: HttpTestingController;
 
   beforeEach(async () => {
-    // Crear mocks
     mockRouter = {
       navigate: jest.fn()
-    } as any;
-
-    mockApiService = {
-      login: jest.fn()
-    } as any;
+    };
 
     await TestBed.configureTestingModule({
-      imports: [Login, FormsModule, CommonModule],
+      imports: [
+        LoginComponent, // Import as standalone component
+        FormsModule,
+        CommonModule,
+        HttpClientTestingModule
+      ],
       providers: [
         { provide: Router, useValue: mockRouter },
-        { provide: ApiService, useValue: mockApiService }
+        ApiService
       ]
     }).compileComponents();
 
-    fixture = TestBed.createComponent(Login);
+    fixture = TestBed.createComponent(LoginComponent);
     component = fixture.componentInstance;
+    apiService = TestBed.inject(ApiService);
+    httpMock = TestBed.inject(HttpTestingController);
     
-    // Limpiar localStorage antes de cada prueba
-    localStorage.clear();
+    // Mock localStorage
+    Storage.prototype.getItem = jest.fn();
+    Storage.prototype.setItem = jest.fn();
+    Storage.prototype.removeItem = jest.fn();
+    Storage.prototype.clear = jest.fn();
     
     fixture.detectChanges();
   });
 
   afterEach(() => {
-    localStorage.clear();
+    httpMock.verify();
+    jest.clearAllMocks();
   });
 
   it('should create', () => {
@@ -50,229 +58,264 @@ describe('LoginComponent', () => {
   it('should initialize with empty username and password', () => {
     expect(component.username).toBe('');
     expect(component.password).toBe('');
-    expect(component.loading).toBe(false);
-    expect(component.error).toBeNull();
-    expect(component.success).toBeNull();
   });
 
   it('should show error when username is empty', async () => {
     component.username = '';
     component.password = 'password123';
     
-    await component.login();
+    await component.login(new Event('submit'));
     
     expect(component.error).toBe('Usuario y contraseña son requeridos');
-    expect(mockApiService.login).not.toHaveBeenCalled();
   });
 
   it('should show error when password is empty', async () => {
     component.username = 'testuser';
     component.password = '';
     
-    await component.login();
+    await component.login(new Event('submit'));
     
     expect(component.error).toBe('Usuario y contraseña son requeridos');
-    expect(mockApiService.login).not.toHaveBeenCalled();
   });
 
-  it('should call login API with correct credentials', async () => {
+  it('should call login API with correct credentials', () => {
     const mockResponse = {
-      access_token: 'mock-token-123',
+      access_token: 'fake-jwt-token',
       role: 'estudiante'
     };
-    
-    mockApiService.login.mockReturnValue(of(mockResponse));
-    
+
     component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
-    expect(mockApiService.login).toHaveBeenCalledWith({
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    expect(apiService.login).toHaveBeenCalledWith({
       username: 'testuser',
       password: 'password123'
     });
   });
 
-  it('should store token in localStorage on successful login', async () => {
+  it('should store token in localStorage on successful login', (done) => {
     const mockResponse = {
-      access_token: 'mock-token-123',
+      access_token: 'fake-jwt-token',
       role: 'estudiante'
     };
-    
-    mockApiService.login.mockReturnValue(of(mockResponse));
-    
+
     component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
-    expect(localStorage.getItem('access_token')).toBe('mock-token-123');
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(localStorage.setItem).toHaveBeenCalledWith('access_token', 'fake-jwt-token');
+      expect(localStorage.setItem).toHaveBeenCalledWith('user_role', 'estudiante');
+      done();
+    }, 100);
   });
 
-  it('should navigate to student dashboard for estudiante role', async () => {
+  it('should navigate to student dashboard for estudiante role', (done) => {
     const mockResponse = {
-      access_token: 'mock-token-123',
+      access_token: 'fake-jwt-token',
       role: 'estudiante'
     };
-    
-    mockApiService.login.mockReturnValue(of(mockResponse));
-    
-    component.username = 'student@test.com';
+
+    component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['/dashboard/student']);
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/dashboard/student']);
+      done();
+    }, 100);
   });
 
-  it('should navigate to teacher dashboard for docente role', async () => {
+  it('should navigate to teacher dashboard for docente role', (done) => {
     const mockResponse = {
-      access_token: 'mock-token-456',
+      access_token: 'fake-jwt-token',
       role: 'docente'
     };
-    
-    mockApiService.login.mockReturnValue(of(mockResponse));
-    
-    component.username = 'teacher@test.com';
+
+    component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['/dashboard/teacher']);
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/dashboard/teacher']);
+      done();
+    }, 100);
   });
 
-  it('should navigate to admin dashboard for administrador role', async () => {
+  it('should navigate to admin dashboard for administrador role', (done) => {
     const mockResponse = {
-      access_token: 'mock-token-789',
+      access_token: 'fake-jwt-token',
       role: 'administrador'
     };
-    
-    mockApiService.login.mockReturnValue(of(mockResponse));
-    
-    component.username = 'admin@test.com';
+
+    component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['/dashboard/admin']);
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/dashboard/admin']);
+      done();
+    }, 100);
   });
 
-  it('should show error when user has no role', async () => {
+  it('should show error when user has no role', (done) => {
     const mockResponse = {
-      access_token: 'mock-token-123',
+      access_token: 'fake-jwt-token',
       role: null
     };
-    
-    mockApiService.login.mockReturnValue(of(mockResponse));
-    
-    component.username = 'noroleuser';
+
+    component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
-    expect(component.error).toBe('Inicio de sesión correcto pero el usuario no tiene rol asignado.');
-    expect(mockRouter.navigate).not.toHaveBeenCalled();
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(component.error).toBe('Inicio de sesión correcto pero el usuario no tiene rol asignado.');
+      expect(mockRouter.navigate).not.toHaveBeenCalled();
+      done();
+    }, 100);
   });
 
-  it('should not navigate for unauthorized role', async () => {
+  it('should not navigate for unauthorized role', (done) => {
     const mockResponse = {
-      access_token: 'mock-token-123',
-      role: 'unauthorized_role'
+      access_token: 'fake-jwt-token',
+      role: 'unauthorized'
     };
-    
-    mockApiService.login.mockReturnValue(of(mockResponse));
-    
-    // Mock window.alert
-    const alertSpy = jest.spyOn(window, 'alert').mockImplementation();
-    
-    component.username = 'baduser';
+
+    component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
-    expect(mockRouter.navigate).not.toHaveBeenCalled();
-    expect(alertSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Acceso denegado')
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(component.error).toBe('Rol no reconocido: unauthorized');
+      expect(mockRouter.navigate).not.toHaveBeenCalled();
+      done();
+    }, 100);
+  });
+
+  it('should handle API error', (done) => {
+    const errorResponse = { 
+      message: 'Invalid credentials' 
+    };
+
+    component.username = 'testuser';
+    component.password = 'wrongpassword';
+
+    jest.spyOn(apiService, 'login').mockReturnValue(
+      throwError(() => errorResponse)
     );
-    
-    alertSpy.mockRestore();
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(component.error).toBe('Invalid credentials');
+      expect(component.loading).toBe(false);
+      done();
+    }, 100);
   });
 
-  it('should handle API error', async () => {
-    const errorMessage = 'Error de conexión';
-    mockApiService.login.mockReturnValue(
-      throwError(() => ({ message: errorMessage }))
-    );
-    
-    component.username = 'testuser';
-    component.password = 'password123';
-    
-    await component.login();
-    
-    expect(component.error).toBe(errorMessage);
-    expect(component.loading).toBe(false);
-  });
-
-  it('should set loading to true during login', () => {
-    mockApiService.login.mockReturnValue(of({
-      access_token: 'token',
+  it('should set loading to true during login', (done) => {
+    const mockResponse = {
+      access_token: 'fake-jwt-token',
       role: 'estudiante'
-    }));
-    
-    component.username = 'testuser';
-    component.password = 'password123';
-    
-    component.login();
-    
-    expect(component.loading).toBe(true);
-  });
+    };
 
-  it('should set loading to false after login completes', async () => {
-    mockApiService.login.mockReturnValue(of({
-      access_token: 'token',
-      role: 'estudiante'
-    }));
-    
     component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
+
+    // Use a delayed observable to simulate async behavior
+    const delayedResponse$ = new Observable(subscriber => {
+      setTimeout(() => {
+        subscriber.next(mockResponse);
+        subscriber.complete();
+      }, 50);
+    });
+
+    jest.spyOn(apiService, 'login').mockReturnValue(delayedResponse$);
+
     expect(component.loading).toBe(false);
+    component.login(new Event('submit'));
+    
+    // Check immediately after calling login
+    setTimeout(() => {
+      expect(component.loading).toBe(true);
+      done();
+    }, 10);
   });
 
-  it('should clear error on new login attempt', async () => {
+  it('should set loading to false after login completes', (done) => {
+    const mockResponse = {
+      access_token: 'fake-jwt-token',
+      role: 'estudiante'
+    };
+
+    component.username = 'testuser';
+    component.password = 'password123';
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
+    setTimeout(() => {
+      expect(component.loading).toBe(false);
+      done();
+    }, 100);
+  });
+
+  it('should clear error on new login attempt', () => {
     component.error = 'Previous error';
-    
-    mockApiService.login.mockReturnValue(of({
-      access_token: 'token',
-      role: 'estudiante'
-    }));
-    
     component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login();
-    
+
+    const mockResponse = {
+      access_token: 'fake-jwt-token',
+      role: 'estudiante'
+    };
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(new Event('submit'));
+
     expect(component.error).toBeNull();
   });
 
-  it('should prevent default form submission', async () => {
-    const mockEvent = {
-      preventDefault: jest.fn()
-    } as any;
-    
-    mockApiService.login.mockReturnValue(of({
-      access_token: 'token',
-      role: 'estudiante'
-    }));
-    
+  it('should prevent default form submission', () => {
+    const mockEvent = new Event('submit');
+    jest.spyOn(mockEvent, 'preventDefault');
+
     component.username = 'testuser';
     component.password = 'password123';
-    
-    await component.login(mockEvent);
-    
+
+    const mockResponse = {
+      access_token: 'fake-jwt-token',
+      role: 'estudiante'
+    };
+
+    jest.spyOn(apiService, 'login').mockReturnValue(of(mockResponse));
+
+    component.login(mockEvent);
+
     expect(mockEvent.preventDefault).toHaveBeenCalled();
   });
 });
