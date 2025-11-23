@@ -508,7 +508,7 @@ print("✔ 4 Grupos creados");
 
 // ESTUDIANTES
 const estudiantes = [
-  { codigo: "EST001", nombres: "Carlos", apellidos: "Ramírez López", grupo: "10°A", nacimiento: "2010-05-20", acudiente: "Luis Ramírez", tel: "3005551111" },
+  { codigo: "EST001", nombres: "Carlos", apellidos: "Ramirez López", grupo: "10°A", nacimiento: "2010-05-20", acudiente: "Luis Ramírez", tel: "3005551111" },
   { codigo: "EST002", nombres: "Ana", apellidos: "Torres Gómez", grupo: "10°A", nacimiento: "2010-09-12", acudiente: "Marta Torres", tel: "3015552222" },
   { codigo: "EST003", nombres: "Sofía", apellidos: "Méndez Castro", grupo: "10°A", nacimiento: "2010-02-08", acudiente: "Roberto Méndez", tel: "3025553333" },
   { codigo: "EST004", nombres: "Miguel", apellidos: "Santos Díaz", grupo: "10°B", nacimiento: "2010-11-15", acudiente: "Patricia Santos", tel: "3035554444" },
@@ -800,115 +800,9 @@ db.auditoria.insertOne({
 
 print("✔ Auditoría registrada");
 
-// ==========================================
-//   USUARIO DE KEYCLOAK (AUTO-CREADO)
-// ==========================================
-print("\n🔐 Configurando usuario de Keycloak...");
-
-// Verificar si ya existe el usuario de Keycloak
-const keycloakUser = db.usuarios.findOne({ correo: "carlos.ramirez@colegio.edu.co" });
-
-if (keycloakUser) {
-  print("⚠️ Usuario de Keycloak ya existe");
-  
-  // Verificar si tiene id_grupo
-  if (!keycloakUser.id_grupo) {
-    print("   Asignando grupo al usuario...");
-    
-    const grupo10A = db.grupos.findOne({ nombre_grupo: "10°A" });
-    
-    if (grupo10A) {
-      // Asignar grupo
-      db.usuarios.updateOne(
-        { _id: keycloakUser._id },
-        { $set: { id_grupo: grupo10A._id } }
-      );
-      
-      print("   ✔ Grupo 10°A asignado");
-      
-      // Verificar matrícula
-      const matriculaExistente = db.matriculas.findOne({
-        id_estudiante: keycloakUser._id,
-        anio_lectivo: "2025"
-      });
-      
-      if (!matriculaExistente) {
-        print("   Creando matrícula...");
-        
-        // Obtener asignaciones del grupo
-        const asignacionesGrupo = db.asignaciones_docentes.find({
-          id_grupo: grupo10A._id,
-          periodo: "1"
-        }).toArray();
-        
-        // Generar calificaciones
-        const calificaciones = asignacionesGrupo.map(asig => ({
-          id_asignacion: asig._id,
-          periodo: "1",
-          notas: [
-            { tipo: "Parcial", nota: parseFloat((Math.random() * 2 + 3).toFixed(1)), nota_maxima: 5.0, peso: 0.25, fecha_eval: new Date(2025, 0, 10), comentarios: "Primera evaluación" },
-            { tipo: "Taller", nota: parseFloat((Math.random() * 2 + 3).toFixed(1)), nota_maxima: 5.0, peso: 0.25, fecha_eval: new Date(2025, 0, 17), comentarios: "Trabajo práctico" },
-            { tipo: "Quiz", nota: parseFloat((Math.random() * 2 + 3).toFixed(1)), nota_maxima: 5.0, peso: 0.25, fecha_eval: new Date(2025, 0, 24), comentarios: "Evaluación corta" },
-            { tipo: "Proyecto", nota: parseFloat((Math.random() * 2 + 3).toFixed(1)), nota_maxima: 5.0, peso: 0.25, fecha_eval: new Date(2025, 0, 31), comentarios: "Proyecto final" }
-          ]
-        }));
-        
-        // Crear matrícula
-        db.matriculas.insertOne({
-          id_estudiante: keycloakUser._id,
-          id_grupo: grupo10A._id,
-          anio_lectivo: "2025",
-          fecha_matricula: Timestamp(),
-          estado: "activa",
-          estudiante_info: {
-            nombres: keycloakUser.nombres,
-            apellidos: keycloakUser.apellidos,
-            codigo_est: keycloakUser.codigo_est,
-            documento: keycloakUser.documento || "1234567890"
-          },
-          grupo_info: {
-            nombre_grupo: grupo10A.nombre_grupo,
-            grado: grupo10A.grado,
-            jornada: grupo10A.jornada
-          },
-          calificaciones: calificaciones,
-          observaciones: "Matrícula automática desde Keycloak",
-          creado_en: Timestamp()
-        });
-        
-        print("   ✔ Matrícula creada con", calificaciones.length, "asignaturas");
-        
-        // Incrementar contador de estudiantes
-        db.grupos.updateOne(
-          { _id: grupo10A._id },
-          { $inc: { estudiantes_actuales: 1 } }
-        );
-      } else {
-        print("   ✔ Matrícula ya existe");
-      }
-    } else {
-      print("   ❌ ERROR: Grupo 10°A no encontrado");
-    }
-  } else {
-    print("   ✔ Usuario ya tiene grupo asignado");
-  }
-} else {
-  print("   ℹ️ No se encontró usuario de Keycloak (se creará automáticamente al primer login)");
-}
-
 print("\n✅ BASE DE DATOS INICIALIZADA COMPLETAMENTE\n");
-
-// Resumen final con verificación de usuario de Keycloak
-const totalUsuarios = db.usuarios.countDocuments();
-const totalEstudiantes = db.usuarios.countDocuments({ rol: "estudiante" });
-const totalDocentes = db.usuarios.countDocuments({ rol: "docente" });
-const totalAdmins = db.usuarios.countDocuments({ rol: "administrador" });
-
-print("📊 Resumen de la base de datos:");
-print(`   - Total Usuarios: ${totalUsuarios}`);
-print(`     • Estudiantes: ${totalEstudiantes}`);
-print(`     • Docentes: ${totalDocentes}`);
-print(`     • Administradores: ${totalAdmins}`);
+print(`📊 Resumen:`);
+print(`   - Usuarios: ${db.usuarios.countDocuments()}`);
 print(`   - Grupos: ${db.grupos.countDocuments()}`);
 print(`   - Cursos: ${db.cursos.countDocuments()}`);
 print(`   - Asignaciones: ${db.asignaciones_docentes.countDocuments()}`);
@@ -916,26 +810,3 @@ print(`   - Matrículas: ${db.matriculas.countDocuments()}`);
 print(`   - Horarios: ${db.horarios.countDocuments()}`);
 print(`   - Observaciones: ${db.observaciones.countDocuments()}`);
 print(`   - Asistencias: ${db.asistencia.countDocuments()}`);
-
-// Verificar estudiantes con grupo asignado
-const estudiantesSinGrupo = db.usuarios.countDocuments({
-  rol: "estudiante",
-  id_grupo: { $exists: false }
-});
-
-if (estudiantesSinGrupo > 0) {
-  print(`\n⚠️  ADVERTENCIA: ${estudiantesSinGrupo} estudiante(s) sin grupo asignado`);
-} else {
-  print("\n✅ Todos los estudiantes tienen grupo asignado");
-}
-
-// Verificar matrículas activas
-const matriculasActivas = db.matriculas.countDocuments({ estado: "activa" });
-print(`✅ ${matriculasActivas} matrícula(s) activa(s)`);
-
-print("\n🎓 Sistema listo para usar");
-print("📧 Credenciales por defecto:");
-print("   Admin: admin@colegio.edu.co");
-print("   Docente: juan.perez@colegio.edu.co");
-print("   Estudiante: carlos.ramirez@colegio.edu.co");
-print("   Password: (configurar en Keycloak)\n");
