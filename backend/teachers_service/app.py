@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from database.db_config import (
     get_usuarios_collection,
     get_cursos_collection,
+    get_groups_collection,
     get_matriculas_collection,
     get_asistencia_collection,
     get_observaciones_collection, 
@@ -448,76 +449,82 @@ def teacher_groups():
         return '', 204
     
     try:
-        # 🔧 Obtener email del token (preferiblemente) o sub como fallback
-        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        teacher_email = g.userinfo.get('email')
+        if not teacher_email:
+            teacher_email = g.userinfo.get('preferred_username')
+        if teacher_email and '@' not in teacher_email:
+            teacher_email = f"{teacher_email}@colegio.edu.co"
+        
         teacher_sub = g.userinfo.get('sub')
         
-        print(f"🔍 Buscando docente con email: {teacher_email}, sub: {teacher_sub}")
+        print(f"🔍 Buscando docente con email: {teacher_email}")
         
         usuarios = get_usuarios_collection()
-        
-        # Buscar por email primero
         docente = usuarios.find_one({
             'correo': teacher_email,
             'rol': 'docente',
             'activo': True
         })
         
-        # Si no se encuentra por email, intentar por sub (si está guardado en la BD)
         if not docente:
-            docente = usuarios.find_one({
-                'keycloak_id': teacher_sub,  # Asumiendo que guardas el UUID aquí
-                'rol': 'docente',
-                'activo': True
-            })
-        
-        if not docente:
-            print(f"❌ Docente no encontrado. Email buscado: {teacher_email}")
+            print(f"❌ Docente no encontrado en MongoDB")
             return jsonify({
                 'success': False,
                 'error': 'Docente no encontrado en la base de datos'
             }), 404
         
         print(f"✅ Docente encontrado: {docente.get('nombres')} {docente.get('apellidos')}")
-                
-        cursos = get_cursos_collection()
+        
+        # ✅ CAMBIO: Buscar en asignaciones_docentes en lugar de cursos
+        from database.db_config import get_asignaciones_collection
+        
+        asignaciones = get_asignaciones_collection()
         matriculas = get_matriculas_collection()
         
-        # Buscar cursos del docente
-        grupos = list(cursos.find({
+        # Buscar asignaciones del docente
+        asignaciones_list = list(asignaciones.find({
             'id_docente': docente['_id'],
-            'activo': True
+            'activo': True,
+            'anio_lectivo': '2025'
         }))
         
-        # Transformar datos al formato esperado por el frontend
-        grupos_formateados = []
-        for grupo in grupos:
-            # Contar estudiantes matriculados activos
-            num_estudiantes = matriculas.count_documents({
-                'id_curso': grupo['_id'],
-                'estado': 'activo'
-            })
+        print(f"📚 Encontradas {len(asignaciones_list)} asignaciones para el docente")
+        
+        # Agrupar por grupo (un grupo puede tener múltiples asignaturas)
+        grupos_dict = {}
+        
+        for asig in asignaciones_list:
+            grupo_id = str(asig['id_grupo'])
             
-            # Contar estudiantes con calificaciones completas para calcular progreso
-            estudiantes_con_calificaciones = matriculas.count_documents({
-                'id_curso': grupo['_id'],
-                'estado': 'activo',
-                'calificaciones': {'$exists': True, '$ne': []}
-            })
+            if grupo_id not in grupos_dict:
+                # Contar estudiantes matriculados ACTIVOS en el grupo
+                num_estudiantes = matriculas.count_documents({
+                    'id_grupo': asig['id_grupo'],
+                    'estado': 'activa'
+                })
+                
+                grupos_dict[grupo_id] = {
+                    '_id': grupo_id,
+                    'name': f"{asig['grupo_info'].get('nombre_grupo', 'Grupo')} - Periodo {asig.get('periodo', '1')}",
+                    'students': num_estudiantes,
+                    'progress_pct': 0,  # TODO: calcular progreso real
+                    'codigo': asig['grupo_info'].get('nombre_grupo', ''),
+                    'periodo': asig.get('periodo', '1'),
+                    'asignaturas': []
+                }
             
-            # Calcular porcentaje de progreso
-            progress_pct = 0
-            if num_estudiantes > 0:
-                progress_pct = round((estudiantes_con_calificaciones / num_estudiantes) * 100)
-            
-            grupos_formateados.append({
-                '_id': str(grupo['_id']),
-                'name': f"{grupo.get('nombre_curso', 'Curso')} - {grupo.get('grado', '')}° ({grupo.get('periodo', '')})",
-                'students': num_estudiantes,
-                'progress_pct': progress_pct,
-                'codigo': grupo.get('codigo_curso', ''),
-                'periodo': grupo.get('periodo', '')
+            # Agregar asignatura al grupo
+            grupos_dict[grupo_id]['asignaturas'].append({
+                'nombre': asig['curso_info'].get('nombre_curso', ''),
+                'codigo': asig['curso_info'].get('codigo_curso', ''),
+                'area': asig['curso_info'].get('area', '')
             })
+        
+        grupos_formateados = list(grupos_dict.values())
+        
+        print(f"✅ {len(grupos_formateados)} grupos únicos encontrados")
+        for grupo in grupos_formateados:
+            print(f"   - {grupo['name']}: {len(grupo['asignaturas'])} asignaturas, {grupo['students']} estudiantes")
         
         return jsonify({
             'success': True,
@@ -533,7 +540,7 @@ def teacher_groups():
             'success': False,
             'error': str(e)
         }), 500
-
+    
 @app.route('/teacher/pending-grades', methods=['GET'])
 @token_required('docente')
 def teacher_pending_grades():
@@ -624,102 +631,80 @@ def teacher_pending_grades():
 def teacher_overview():
     """Resumen general del docente autenticado"""
     try:
-        # 🔧 Obtener email del token (preferiblemente) o sub como fallback
-        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
-        teacher_sub = g.userinfo.get('sub')
+        teacher_email = g.userinfo.get('email')
+        if not teacher_email:
+            teacher_email = g.userinfo.get('preferred_username')
+        if teacher_email and '@' not in teacher_email:
+            teacher_email = f"{teacher_email}@colegio.edu.co"
         
-        print(f"🔍 Buscando docente con email: {teacher_email}, sub: {teacher_sub}")
+        print(f"🔍 Buscando docente: {teacher_email}")
         
         usuarios = get_usuarios_collection()
-        
-        # Buscar por email primero
         docente = usuarios.find_one({
             'correo': teacher_email,
             'rol': 'docente',
             'activo': True
         })
         
-        # Si no se encuentra por email, intentar por sub (si está guardado en la BD)
         if not docente:
-            docente = usuarios.find_one({
-                'keycloak_id': teacher_sub,  # Asumiendo que guardas el UUID aquí
-                'rol': 'docente',
-                'activo': True
-            })
-        
-        if not docente:
-            print(f"❌ Docente no encontrado. Email buscado: {teacher_email}")
             return jsonify({
                 'success': False,
-                'error': 'Docente no encontrado en la base de datos'
+                'error': 'Docente no encontrado'
             }), 404
         
         print(f"✅ Docente encontrado: {docente.get('nombres')} {docente.get('apellidos')}")
-     
-        cursos = get_cursos_collection()
+        
+        # ✅ CAMBIO: Usar asignaciones_docentes
+        from database.db_config import get_asignaciones_collection
+        
+        asignaciones = get_asignaciones_collection()
         matriculas = get_matriculas_collection()
         
-        # Contar grupos activos
-        groups_count = cursos.count_documents({
+        # Contar asignaciones (cursos únicos)
+        asignaciones_list = list(asignaciones.find({
             'id_docente': docente['_id'],
-            'activo': True
-        })
-        
-        # Contar calificaciones pendientes
-        cursos_docente = list(cursos.find({
-            'id_docente': docente['_id'],
-            'activo': True
+            'activo': True,
+            'anio_lectivo': '2025'
         }))
         
-        total_pending = 0
-        total_estudiantes = 0
+        # Contar grupos únicos
+        grupos_unicos = set(str(asig['id_grupo']) for asig in asignaciones_list)
+        groups_count = len(grupos_unicos)
         
-        for curso in cursos_docente:
-            total = matriculas.count_documents({
-                'id_curso': curso['_id'],
-                'estado': 'activo'
+        # Contar estudiantes totales en todos los grupos del docente
+        total_students = 0
+        for grupo_id_str in grupos_unicos:
+            from bson import ObjectId
+            grupo_id = ObjectId(grupo_id_str)
+            num = matriculas.count_documents({
+                'id_grupo': grupo_id,
+                'estado': 'activa'
             })
-            
-            con_notas = matriculas.count_documents({
-                'id_curso': curso['_id'],
-                'estado': 'activo',
-                'calificaciones': {'$exists': True, '$ne': []}
-            })
-            
-            total_estudiantes += total
-            total_pending += (total - con_notas)
+            total_students += num
         
-        # Buscar próximo evento (última fecha de evaluación registrada)
-        pipeline = [
-            {'$match': {'id_curso': {'$in': [c['_id'] for c in cursos_docente]}}},
-            {'$unwind': '$calificaciones'},
-            {'$sort': {'calificaciones.fecha_eval': -1}},
-            {'$limit': 1}
-        ]
+        # TODO: Implementar calificaciones pendientes
+        pending_grades = 0
         
-        ultima_eval = list(matriculas.aggregate(pipeline))
-        
-        next_event = 'No hay eventos programados'
-        if ultima_eval and len(ultima_eval) > 0:
-            fecha_ultima = ultima_eval[0]['calificaciones'].get('fecha_eval')
-            if fecha_ultima:
-                next_event = f"Última evaluación: {fecha_ultima.strftime('%d/%m/%Y')}"
+        print(f"📊 Overview: {groups_count} grupos, {total_students} estudiantes, {len(asignaciones_list)} asignaturas")
         
         return jsonify({
             'success': True,
+            'teacher_name': f"{docente.get('nombres', '')} {docente.get('apellidos', '')}".strip(),
+            'especialidad': docente.get('especialidad', 'N/A'),
             'groups_count': groups_count,
-            'pending_grades': total_pending,
-            'total_students': total_estudiantes,
-            'next_event': next_event,
-            'teacher_name': f"{docente.get('nombres', '')} {docente.get('apellidos', '')}",
-            'especialidad': docente.get('especialidad', 'N/A')
+            'total_students': total_students,
+            'pending_grades': pending_grades,
+            'next_event': 'No hay eventos programados'
         }), 200
         
     except Exception as e:
         print(f"❌ Error en /teacher/overview: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/teacher/courses/<course_id>/grades', methods=['GET'])
 @token_required('docente')
@@ -837,7 +822,112 @@ def get_course_grades(course_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500    
-
+@app.route('/teacher/groups/<group_id>/grades', methods=['GET'])
+@token_required('docente')
+def get_group_grades(group_id):
+    """Obtener calificaciones de un grupo (todas las asignaturas del docente en ese grupo)"""
+    try:
+        # Convertir ID a ObjectId
+        grupo_obj_id = string_to_objectid(group_id)
+        if not grupo_obj_id:
+            return jsonify({'success': False, 'error': 'ID de grupo inválido'}), 400
+        
+        # Obtener email del docente
+        teacher_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
+        if teacher_email and '@' not in teacher_email:
+            teacher_email = f"{teacher_email}@colegio.edu.co"
+        
+        teacher_sub = g.userinfo.get('sub')
+        
+        usuarios = get_usuarios_collection()
+        docente = usuarios.find_one({
+            'correo': teacher_email,
+            'rol': 'docente',
+            'activo': True
+        })
+        
+        if not docente:
+            return jsonify({'success': False, 'error': 'Docente no encontrado'}), 404
+        
+        print(f"✅ Docente: {docente.get('nombres')} {docente.get('apellidos')}")
+        
+        # Buscar asignaciones del docente en este grupo
+        from database.db_config import get_asignaciones_collection
+        
+        asignaciones = get_asignaciones_collection()
+        matriculas = get_matriculas_collection()
+        
+        asignaciones_grupo = list(asignaciones.find({
+            'id_docente': docente['_id'],
+            'id_grupo': grupo_obj_id,
+            'activo': True
+        }))
+        
+        if not asignaciones_grupo:
+            return jsonify({
+                'success': False,
+                'error': 'No tienes asignaturas asignadas en este grupo'
+            }), 403
+        
+        print(f"📚 Encontradas {len(asignaciones_grupo)} asignaturas del docente en este grupo")
+        
+        # Obtener estudiantes matriculados en el grupo
+        estudiantes_matriculados = list(matriculas.find({
+            'id_grupo': grupo_obj_id,
+            'estado': 'activa'
+        }))
+        
+        print(f"👥 Encontrados {len(estudiantes_matriculados)} estudiantes en el grupo")
+        
+        # Formatear datos de estudiantes
+        students_data = []
+        for matricula in estudiantes_matriculados:
+            student_info = matricula.get('estudiante_info', {})
+            calificaciones = matricula.get('calificaciones', [])
+            
+            # Calcular promedio
+            promedio = 0
+            if calificaciones:
+                total = sum(c.get('nota', 0) * c.get('peso', 0) for c in calificaciones)
+                total_peso = sum(c.get('peso', 0) for c in calificaciones)
+                promedio = round(total / total_peso, 2) if total_peso > 0 else 0
+            
+            students_data.append({
+                'enrollment_id': str(matricula['_id']),
+                'student_id': str(matricula['id_estudiante']),
+                'student_name': f"{student_info.get('nombres', '')} {student_info.get('apellidos', '')}",
+                'student_code': student_info.get('codigo_est', ''),
+                'grades': serialize_doc(calificaciones),
+                'average': promedio,
+                'estado': 'Aprobado' if promedio >= 3.0 else 'Reprobado'
+            })
+        
+        # Información del grupo
+        grupos = get_groups_collection()
+        grupo = grupos.find_one({'_id': grupo_obj_id})
+        
+        return jsonify({
+            'success': True,
+            'group_id': group_id,
+            'group_name': grupo.get('nombre_grupo', '') if grupo else '',
+            'grado': grupo.get('grado', '') if grupo else '',
+            'asignaturas': [
+                {
+                    'nombre': asig['curso_info'].get('nombre_curso', ''),
+                    'codigo': asig['curso_info'].get('codigo_curso', '')
+                }
+                for asig in asignaciones_grupo
+            ],
+            'students': students_data,
+            'count': len(students_data)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_group_grades: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
 @app.route('/teacher/grades', methods=['POST'])
 @token_required('docente')
 def add_grade():

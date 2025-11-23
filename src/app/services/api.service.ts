@@ -62,9 +62,10 @@ export class ApiService {
     return this.http.delete(`${environment.api.teachers}/teachers/${id}`);
   }
 
-  getTeacherGroups() {
-    return this.http.get(`${environment.api.teachers}/teacher/groups`);
-  }
+  getTeacherGroups(): Observable<any> {
+  console.log('📡 API: Obteniendo grupos del docente');
+  return this.http.get(`${environment.api.teachers}/teacher/groups`);
+}
 
   getTeacherPendingGrades() {
     return this.http.get(`${environment.api.teachers}/teacher/pending-grades`);
@@ -73,11 +74,32 @@ export class ApiService {
   getTeacherOverview() {
     return this.http.get(`${environment.api.teachers}/teacher/overview`);
   }
+  getTeacherObservations(filters?: any): Observable<any> {
+  console.log('📡 API: Obteniendo observaciones del docente');
+  
+  let params = new HttpParams();
+  if (filters) {
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) {
+        params = params.set(key, filters[key]);
+      }
+    });
+  }
+  
+  return this.http.get(`${environment.api.teachers}/teacher/observations`, { params });
+}
 
   // ===== CALIFICACIONES (PROFESOR) =====
-  getCourseGrades(courseId: string) {
-    return this.http.get(`${environment.api.teachers}/teacher/courses/${courseId}/grades`);
-  }
+  getCourseGrades(courseId: string): Observable<any> {
+  console.log('📡 API: Obteniendo calificaciones del curso/grupo:', courseId);
+  
+  // ✅ CAMBIO: Usar endpoint de grupos en lugar de cursos
+  return this.http.get(`${environment.api.teachers}/teacher/groups/${courseId}/grades`);
+}
+  saveGrades(data: any): Observable<any> {
+  console.log('📡 API: Guardando calificaciones:', data);
+  return this.http.post(`${environment.api.teachers}/teacher/grades`, data);
+}
 
   addGrade(data: {
     enrollment_id: string;
@@ -146,10 +168,6 @@ assignStudentToGroup(groupId: string, studentId: string): Observable<any> {
   return this.http.post(`${environment.api.groups}/groups/${groupId}/assign-student`, {
     student_id: studentId
   });
-}
-
-getGroupSchedule(groupId: string): Observable<any> {
-  return this.http.get(`${environment.api.groups}/groups/${groupId}/schedule`);
 }
 
 createGroupSchedule(groupId: string, horario: any[]): Observable<any> {
@@ -267,15 +285,47 @@ createGroupSchedule(groupId: string, horario: any[]): Observable<any> {
   }
 
   // Gestión de estudiantes
-  getAdminStudents(filters?: { grado?: string; estado?: string; search?: string }) {
-    let params = new HttpParams();
-    if (filters) {
-      if (filters.grado) params = params.set('grado', filters.grado);
-      if (filters.estado) params = params.set('estado', filters.estado);
-      if (filters.search) params = params.set('search', filters.search);
+  // Gestión de estudiantes
+getAdminStudents(filters?: any): Observable<any> {
+  console.log('📡 API: Obteniendo estudiantes');
+  
+  let params = new HttpParams();
+  
+  if (filters) {
+    if (filters.estado) {
+      params = params.set('estado', filters.estado);
     }
-    return this.http.get(`${environment.api.admin}/admin/students`, { params });
+    if (filters.grado) {
+      params = params.set('grado', filters.grado);
+    }
   }
+  
+  return this.http.get(`${environment.api.admin}/admin/students`, { params });
+}
+
+// Gestión de cursos
+getAdminCourses(filters?: any): Observable<any> {
+  console.log('📡 API: Obteniendo cursos');
+  
+  let params = new HttpParams();
+  
+  if (filters) {
+    if (filters.estado) {
+      params = params.set('activo', filters.estado === 'activo' ? 'true' : 'false');
+    }
+    if (filters.grado) {
+      params = params.set('grado', filters.grado);
+    }
+    if (filters.periodo) {
+      params = params.set('periodo', filters.periodo);
+    }
+  }
+  
+  return this.http.get(`${environment.api.admin}/admin/courses`, { params });
+}
+
+
+
 
   getStudentDetail(studentId: string) {
     return this.http.get(`${environment.api.admin}/admin/students/${studentId}`);
@@ -293,17 +343,6 @@ createGroupSchedule(groupId: string, horario: any[]): Observable<any> {
     return this.http.delete(`${environment.api.admin}/admin/students/${studentId}`);
   }
 
-  // Gestión de cursos
-  getAdminCourses(filters?: { grado?: string; periodo?: string; estado?: string }) {
-    let params = new HttpParams();
-    if (filters) {
-      if (filters.grado) params = params.set('grado', filters.grado);
-      if (filters.periodo) params = params.set('periodo', filters.periodo);
-      if (filters.estado) params = params.set('estado', filters.estado);
-    }
-    return this.http.get(`${environment.api.admin}/admin/courses`, { params });
-  }
-
   getCourseDetail(courseId: string) {
     return this.http.get(`${environment.api.admin}/admin/courses/${courseId}`);
   }
@@ -317,7 +356,7 @@ createGroupSchedule(groupId: string, horario: any[]): Observable<any> {
   }
 
   deleteCourse(courseId: string): Observable<any> {
-    return this.http.delete(`${this.adminUrl}/admin/courses/${courseId}`);
+    return this.http.delete(`${environment.api.admin}/admin/courses/${courseId}`);
   }
 
   assignTeacherToCourse(courseId: string, teacherId: string) {
@@ -336,19 +375,29 @@ createGroupSchedule(groupId: string, horario: any[]): Observable<any> {
         }
       });
     }
-    return this.http.get(`${this.adminUrl}/admin/teachers`, { params });
+    return this.http.get(`${environment.api.admin}/admin/teachers`, { params });
   }
 
   // Gestión de matrículas
-  getAdminEnrollments(filters?: { estado?: string; periodo?: string; grado?: string }) {
-    let params = new HttpParams();
-    if (filters) {
-      if (filters.estado) params = params.set('estado', filters.estado);
-      if (filters.periodo) params = params.set('periodo', filters.periodo);
-      if (filters.grado) params = params.set('grado', filters.grado);
-    }
-    return this.http.get(`${environment.api.admin}/admin/enrollments`, { params });
+  getAdminEnrollments(filters: any = {}): Observable<any> {
+  console.log('📡 API: Obteniendo matrículas con filtros:', filters);
+  
+  let params = new HttpParams();
+  
+  if (filters.estado) {
+    params = params.set('estado', filters.estado);
   }
+  
+  if (filters.grado) {
+    params = params.set('grado', filters.grado);
+  }
+  
+  if (filters.periodo) {
+    params = params.set('periodo', filters.periodo);
+  }
+  
+  return this.http.get(`${environment.api.admin}/admin/enrollments`, { params });
+}
 
   createEnrollment(enrollmentData: any) {
     return this.http.post(`${environment.api.admin}/admin/enrollments`, enrollmentData);
@@ -362,36 +411,118 @@ createGroupSchedule(groupId: string, horario: any[]): Observable<any> {
   }
 
   getEnrollmentDetail(enrollmentId: string): Observable<any> {
-    return this.http.get(`${this.adminUrl}/admin/enrollments/${enrollmentId}`);
+    return this.http.get(`${environment.api.admin}/admin/enrollments/${enrollmentId}`);
   }
 
   updateEnrollment(enrollmentId: string, data: any): Observable<any> {
-    return this.http.put(`${this.adminUrl}/admin/enrollments/${enrollmentId}/status`, data);
+    return this.http.put(`${environment.api.admin}/admin/enrollments/${enrollmentId}/status`, data);
   }
+  getReportEnrollmentHistory(): Observable<any> {
+  console.log('📡 API: Obteniendo reporte historial matrículas');
+  return this.http.get(`${environment.api.admin}/admin/reports/enrollment-history`);
+}
 
   deleteEnrollment(enrollmentId: string): Observable<any> {
-    return this.http.delete(`${this.adminUrl}/admin/enrollments/${enrollmentId}`);
+    return this.http.delete(`${environment.api.admin}/admin/enrollments/${enrollmentId}`);
   }
 
   // Reportes
-  getReportStudentsByGrade() {
-    return this.http.get(`${environment.api.admin}/admin/reports/students-by-grade`);
-  }
+  getReportStudentsByGrade(): Observable<any> {
+  console.log('📡 API: Obteniendo reporte estudiantes por grado');
+  // ✅ CORRECTO
+  return this.http.get(`${environment.api.admin}/admin/reports/students-by-grade`);
+}
 
-  getReportPerformanceByCourse() {
-    return this.http.get(`${environment.api.admin}/admin/reports/performance-by-course`);
-  }
+  getReportPerformanceByCourse(): Observable<any> {
+  console.log('📡 API: Obteniendo reporte rendimiento por curso');
+  return this.http.get(`${environment.api.admin}/admin/reports/performance-by-course`);
+}
 
-  getReportTeacherWorkload() {
-    return this.http.get(`${environment.api.admin}/admin/reports/teacher-workload`);
-  }
+getReportTeacherWorkload(): Observable<any> {
+  console.log('📡 API: Obteniendo reporte carga docente');
+  return this.http.get(`${environment.api.admin}/admin/reports/teacher-workload`);
+}
 
-  getReportEnrollmentHistory(year?: string) {
-    const params = year ? `?year=${year}` : '';
-    return this.http.get(`${environment.api.admin}/admin/reports/enrollment-history${params}`);
-  }
+getReportAcademicStatistics(): Observable<any> {
+  console.log('📡 API: Obteniendo estadísticas académicas');
+  return this.http.get(`${environment.api.admin}/admin/reports/academic-statistics`);
+}
 
-  getReportAcademicStatistics() {
-    return this.http.get(`${environment.api.admin}/admin/reports/academic-statistics`);
+  // ==========================================
+//   GRUPOS Y ASIGNACIONES
+// ==========================================
+
+/**
+ * Obtener lista de asignaturas (cursos base)
+ */
+getCourses(filters?: any): Observable<any> {
+  const params = this.buildQueryParams(filters);
+  return this.http.get(`${environment.api.admin}/admin/courses`, { params });
+}
+
+/**
+ * Obtener asignaciones docentes
+ */
+getAssignments(filters?: { group_id?: string; teacher_id?: string; periodo?: string }): Observable<any> {
+  const params = this.buildQueryParams(filters);
+  return this.http.get(`${environment.api.admin}/admin/assignments`, { params });
+}
+
+/**
+ * Obtener asignaciones de un grupo específico
+ */
+getGroupAssignments(groupId: string, periodo: string = '1'): Observable<any> {
+  return this.http.get(`${environment.api.admin}/admin/groups/${groupId}/assignments`, {
+    params: { periodo }
+  });
+}
+
+/**
+ * Crear asignación docente (grupo + curso + docente)
+ */
+createAssignment(data: {
+  group_id: string;
+  course_id: string;
+  teacher_id: string;
+  periodo: string;
+  salon?: string;
+  anio_lectivo?: string;
+}): Observable<any> {
+  return this.http.post(`${environment.api.admin}/admin/courses`, data);
+}
+
+/**
+ * Eliminar asignación docente
+ */
+deleteAssignment(assignmentId: string): Observable<any> {
+  return this.http.delete(`${environment.api.admin}/admin/assignments/${assignmentId}`);
+}
+
+/**
+ * Obtener horario de un grupo
+ */
+getGroupSchedule(groupId: string): Observable<any> {
+  return this.http.get(`${environment.api.groups}/groups/${groupId}/schedule`);
+}
+// ==========================================
+//   MÉTODOS AUXILIARES
+// ==========================================
+
+/**
+ * Construir HttpParams desde un objeto de filtros
+ */
+private buildQueryParams(filters?: any): HttpParams {
+  let params = new HttpParams();
+  
+  if (filters) {
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== null && filters[key] !== undefined && filters[key] !== '') {
+        params = params.set(key, filters[key].toString());
+      }
+    });
   }
+  
+  return params;
+}
+
 }

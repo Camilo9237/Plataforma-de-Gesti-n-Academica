@@ -23,9 +23,11 @@ stop_service "students_service"
 stop_service "teachers_service"
 stop_service "administrator_service"
 stop_service "groups_service"
+stop_service "grades_service"
+
 
 # Matar cualquier proceso Python que siga corriendo en los puertos
-for port in 5000 5001 5002 5003 5004; do
+for port in 5000 5001 5002 5003 5004 5005 5006; do
     lsof -ti:$port | xargs kill -9 2>/dev/null
 done
 

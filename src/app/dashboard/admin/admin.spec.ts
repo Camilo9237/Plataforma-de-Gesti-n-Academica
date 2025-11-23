@@ -47,12 +47,12 @@ describe('AdminComponent', () => {
   let removeItemSpy: jest.SpyInstance;
   let clearSpy: jest.SpyInstance;
 
-    beforeEach(async () => {
+  beforeEach(async () => {
     // ✅ Espiar el objeto localStorage GLOBAL, no el prototipo
     getItemSpy = jest.spyOn(window.localStorage, 'getItem').mockReturnValue(null);
-    setItemSpy = jest.spyOn(window.localStorage, 'setItem').mockImplementation(() => {});
-    removeItemSpy = jest.spyOn(window.localStorage, 'removeItem').mockImplementation(() => {});
-    clearSpy = jest.spyOn(window.localStorage, 'clear').mockImplementation(() => {});
+    setItemSpy = jest.spyOn(window.localStorage, 'setItem').mockImplementation(() => { });
+    removeItemSpy = jest.spyOn(window.localStorage, 'removeItem').mockImplementation(() => { });
+    clearSpy = jest.spyOn(window.localStorage, 'clear').mockImplementation(() => { });
 
     // Create mocks
     const apiServiceMock = {
@@ -105,16 +105,11 @@ describe('AdminComponent', () => {
     jest.restoreAllMocks();
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
-    jest.restoreAllMocks();
-  });
-
   // ==========================================
   //   TESTS DE CREACIÓN
   // ==========================================
 
-    describe('Component Creation', () => {
+  describe('Component Creation', () => {
     it('should create', () => {
       expect(component).toBeTruthy();
     });
@@ -145,9 +140,9 @@ describe('AdminComponent', () => {
   //   TESTS DE INICIALIZACIÓN
   // ==========================================
 
-    describe('ngOnInit', () => {
+  describe('ngOnInit', () => {
     it('should call loadUserInfo and loadData on init', () => {
-      const loadUserInfoSpy = jest.spyOn(component, 'loadUserInfo').mockImplementation(() => {});
+      const loadUserInfoSpy = jest.spyOn(component, 'loadUserInfo').mockImplementation(() => { });
       const loadDataSpy = jest.spyOn(component, 'loadData').mockImplementation(() => Promise.resolve());
 
       // ✅ Llamar detectChanges para ejecutar ngOnInit
@@ -162,7 +157,7 @@ describe('AdminComponent', () => {
   //   TESTS DE CARGA DE USUARIO
   // ==========================================
 
-      describe('loadUserInfo', () => {
+  describe('loadUserInfo', () => {
     it('should load user info from localStorage', () => {
       const mockUser = { nombres: 'Carlos Admin', apellidos: 'López' };
       // ✅ Limpiar llamadas previas y configurar el mock
@@ -178,14 +173,14 @@ describe('AdminComponent', () => {
     it('should use default name if userInfo is not in localStorage', () => {
       getItemSpy.mockClear();
       getItemSpy.mockReturnValue(null);
-      
+
       component.loadUserInfo();
 
       expect(component.adminName).toBe('Administrador');
     });
 
     it('should handle invalid JSON in localStorage', () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
       getItemSpy.mockClear();
       getItemSpy.mockReturnValue('invalid-json');
 
@@ -193,7 +188,7 @@ describe('AdminComponent', () => {
 
       expect(component.adminName).toBe('Administrador');
       expect(consoleErrorSpy).toHaveBeenCalled();
-      
+
       consoleErrorSpy.mockRestore();
     });
   });
@@ -202,7 +197,7 @@ describe('AdminComponent', () => {
   //   TESTS DE CARGA DE DATOS
   // ==========================================
 
-    describe('loadData', () => {
+  describe('loadData', () => {
     it('should set loading to true initially', () => {
       component.loadData();
 
@@ -222,15 +217,15 @@ describe('AdminComponent', () => {
 
     it('should handle errors when loading data', async () => {
       // ✅ Silenciar console.error para este test
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+
       apiService.getAdminStudents.mockReturnValue(throwError(() => new Error('API Error')));
 
       await component.loadData();
 
       expect(component.error).toBe('Error al cargar los datos del panel');
       expect(component.loading).toBe(false);
-      
+
       consoleErrorSpy.mockRestore();
     });
   });
@@ -249,12 +244,12 @@ describe('AdminComponent', () => {
 
     it('should handle error when loading students', async () => {
       // ✅ Silenciar console.error
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+
       apiService.getAdminStudents.mockReturnValue(throwError(() => new Error('Error')));
 
       await expect(component.loadStudents()).rejects.toThrow();
-      
+
       consoleErrorSpy.mockRestore();
     });
   });
@@ -273,12 +268,12 @@ describe('AdminComponent', () => {
 
     it('should handle error when loading courses', async () => {
       // ✅ Silenciar console.error
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+
       apiService.getAdminCourses.mockReturnValue(throwError(() => new Error('Error')));
 
       await expect(component.loadCourses()).rejects.toThrow();
-      
+
       consoleErrorSpy.mockRestore();
     });
   });
@@ -297,12 +292,12 @@ describe('AdminComponent', () => {
 
     it('should handle error when loading enrollments', async () => {
       // ✅ Silenciar console.error
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+
       apiService.getAdminEnrollments.mockReturnValue(throwError(() => new Error('Error')));
 
       await expect(component.loadEnrollments()).rejects.toThrow();
-      
+
       consoleErrorSpy.mockRestore();
     });
   });
@@ -326,25 +321,25 @@ describe('AdminComponent', () => {
     });
 
     it('should handle response without success flag', async () => {
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+
       apiService.getAdminStatistics.mockReturnValue(of({ success: false }));
 
       await component.loadStats();
 
       expect(component.stats.totalStudents).toBe(0);
-      
+
       consoleWarnSpy.mockRestore();
     });
 
     it('should handle error when loading stats', async () => {
       // ✅ Silenciar console.error
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+
       apiService.getAdminStatistics.mockReturnValue(throwError(() => new Error('Error')));
 
       await expect(component.loadStats()).rejects.toThrow();
-      
+
       consoleErrorSpy.mockRestore();
     });
   });
@@ -501,7 +496,7 @@ describe('AdminComponent', () => {
   //   TESTS DE LOGOUT
   // ==========================================
 
-      describe('logout', () => {
+  describe('logout', () => {
     beforeEach(() => {
       jest.useFakeTimers();
       // ✅ Limpiar el mock antes de cada test de logout
@@ -538,12 +533,12 @@ describe('AdminComponent', () => {
       expect(navigateSpy).not.toHaveBeenCalled();
     });
   });
-  
+
   // ==========================================
   //   TESTS DE INTEGRACIÓN
   // ==========================================
 
-    describe('Integration Tests', () => {
+  describe('Integration Tests', () => {
     it('should load all data on component initialization', async () => {
       // ✅ Llamar detectChanges para iniciar el ciclo de vida
       fixture.detectChanges();
@@ -570,3 +565,4 @@ describe('AdminComponent', () => {
       expect(component.activeView).toBe('dashboard');
     });
   });
+});

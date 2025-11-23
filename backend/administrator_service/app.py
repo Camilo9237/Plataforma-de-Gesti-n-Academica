@@ -934,38 +934,48 @@ def delete_student_admin(student_id):
 @app.route('/admin/enrollments', methods=['GET'])
 @token_required('administrador')
 def get_all_enrollments_admin():
-    """Obtener todas las matrículas con filtros"""
+    """Obtener todas las matrículas"""
     try:
         matriculas = get_matriculas_collection()
         
-        # Filtros
-        estado = request.args.get('estado')  # activo, pendiente, aprobado, rechazado, cancelado
-        periodo = request.args.get('periodo')
+        # Filtros opcionales
+        estado = request.args.get('estado')
         grado = request.args.get('grado')
+        periodo = request.args.get('periodo')
         
         query = {}
         
         if estado:
             query['estado'] = estado
         
+        if grado:
+            query['grupo_info.grado'] = grado
+        
         if periodo:
             query['periodo'] = periodo
         
-        if grado:
-            query['curso_info.grado'] = grado
+        # ✅ Buscar matrículas (estudiante → grupo)
+        matriculas_list = list(matriculas.find(query))
         
-        # Obtener matrículas
-        enrollments = list(matriculas.find(query).sort('fecha_matricula', -1))
+        print(f"✅ Query: {query}")
+        print(f"✅ Encontradas {len(matriculas_list)} matrículas")
+        
+        # Mostrar ejemplo si hay datos
+        if matriculas_list:
+            ejemplo = matriculas_list[0]
+            print(f"📋 Ejemplo: {ejemplo.get('estudiante_info', {}).get('nombres')} → {ejemplo.get('grupo_info', {}).get('nombre_grupo')}")
         
         return jsonify({
             'success': True,
-            'enrollments': serialize_doc(enrollments),
-            'count': len(enrollments)
+            'enrollments': serialize_doc(matriculas_list),
+            'count': len(matriculas_list)
         }), 200
         
     except Exception as e:
+        print(f"❌ Error en get_all_enrollments_admin: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/admin/enrollments', methods=['POST'])
 @token_required('administrador')
@@ -1107,46 +1117,56 @@ def update_enrollment_status(enrollment_id):
 @app.route('/admin/courses', methods=['GET'])
 @token_required('administrador')
 def get_all_courses_admin():
-    """Obtener todos los cursos con filtros"""
+    """Obtener todas las asignaciones docentes (cursos asignados a grupos)"""
     try:
-        cursos = get_cursos_collection()
+        from database.db_config import get_asignaciones_collection
+        
+        asignaciones = get_asignaciones_collection()
         
         # Filtros opcionales
         grado = request.args.get('grado')
         periodo = request.args.get('periodo')
-        estado = request.args.get('estado')
-        teacher_id = request.args.get('teacher_id')
+        activo = request.args.get('activo', 'true').lower() == 'true'
         
-        # Construir query
-        query = {}
+        query = {'activo': activo}
         
         if grado:
-            query['grado'] = grado
+            query['grupo_info.grado'] = grado
         
         if periodo:
             query['periodo'] = periodo
         
-        if estado:
-            query['activo'] = (estado == 'activo')
+        # Buscar asignaciones
+        asignaciones_list = list(asignaciones.find(query))
         
-        if teacher_id:
-            teacher_obj_id = string_to_objectid(teacher_id)
-            if teacher_obj_id:
-                query['id_docente'] = teacher_obj_id
+        print(f"✅ Encontradas {len(asignaciones_list)} asignaciones")
         
-        # Obtener cursos
-        courses = list(cursos.find(query).sort('grado', 1))
+        # Formatear para el frontend (mantener compatibilidad)
+        courses = []
+        for asig in asignaciones_list:
+            course = {
+                '_id': str(asig['_id']),
+                'codigo_curso': asig['curso_info'].get('codigo_curso', 'N/A'),
+                'nombre_curso': asig['curso_info'].get('nombre_curso', 'Sin nombre'),
+                'grado': asig['grupo_info'].get('grado', 'N/A'),
+                'periodo': asig.get('periodo', '1'),
+                'grupo': asig['grupo_info'].get('nombre_grupo', 'Sin grupo'),
+                'activo': asig.get('activo', True),
+                'docente_info': asig.get('docente_info', {})
+            }
+            courses.append(course)
         
         return jsonify({
             'success': True,
-            'courses': serialize_doc(courses),
+            'courses': courses,
             'count': len(courses)
         }), 200
         
     except Exception as e:
         print(f"❌ Error en get_all_courses_admin: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/admin/courses/<course_id>', methods=['GET'])
 @token_required('administrador')
@@ -1186,73 +1206,215 @@ def get_course_detail_admin(course_id):
 @app.route('/admin/courses', methods=['POST'])
 @token_required('administrador')
 def create_course_admin():
-    """Crear nuevo curso/grupo"""
+    """Crear nueva asignación docente (grupo + curso + docente + período)"""
     try:
         data = request.get_json()
         
         if not data:
             return jsonify({'success': False, 'error': 'No se proporcionaron datos'}), 400
         
-        # Validar campos requeridos
-        required_fields = ['nombre_curso', 'codigo_curso', 'grado', 'periodo']
+        # ✅ Validar campos requeridos
+        required_fields = ['group_id', 'course_id', 'teacher_id', 'periodo']
         for field in required_fields:
             if field not in data:
                 return jsonify({'success': False, 'error': f'Campo {field} requerido'}), 400
         
-        cursos = get_cursos_collection()
+        from database.db_config import get_groups_collection
+        
         usuarios = get_usuarios_collection()
+        cursos = get_cursos_collection()
+        grupos = get_groups_collection()
         
-        # Verificar si ya existe
-        if cursos.find_one({'codigo_curso': data['codigo_curso']}):
-            return jsonify({'success': False, 'error': 'Ya existe un curso con ese código'}), 400
+        # Convertir IDs
+        group_obj_id = string_to_objectid(data['group_id'])
+        course_obj_id = string_to_objectid(data['course_id'])
+        teacher_obj_id = string_to_objectid(data['teacher_id'])
         
-        # Crear curso
-        nuevo_curso = {
-            'nombre_curso': data['nombre_curso'],
-            'codigo_curso': data['codigo_curso'],
-            'grado': data['grado'],
+        if not all([group_obj_id, course_obj_id, teacher_obj_id]):
+            return jsonify({'success': False, 'error': 'IDs inválidos'}), 400
+        
+        # Verificar que existan
+        grupo = grupos.find_one({'_id': group_obj_id})
+        curso = cursos.find_one({'_id': course_obj_id})
+        docente = usuarios.find_one({'_id': teacher_obj_id, 'rol': 'docente'})
+        
+        if not grupo or not curso or not docente:
+            return jsonify({'success': False, 'error': 'Grupo, curso o docente no encontrado'}), 404
+        
+        # ✅ Verificar que no exista ya esta asignación
+        from database.db_config import get_asignaciones_collection
+        asignaciones = get_asignaciones_collection()
+        
+        if asignaciones.find_one({
+            'id_grupo': group_obj_id,
+            'id_curso': course_obj_id,
+            'periodo': data['periodo']
+        }):
+            return jsonify({'success': False, 'error': 'Ya existe esta asignación para este grupo y período'}), 400
+        
+        # ✅ Crear asignación docente
+        nueva_asignacion = {
+            'id_grupo': group_obj_id,
+            'id_curso': course_obj_id,
+            'id_docente': teacher_obj_id,
             'periodo': data['periodo'],
-            'descripcion': data.get('descripcion', ''),
-            'creditos': data.get('creditos', 1),
-            'intensidad_horaria': data.get('intensidad_horaria', 2),
-            'activo': data.get('activo', True),
+            'anio_lectivo': data.get('anio_lectivo', '2025'),
+            'grupo_info': {
+                'nombre_grupo': grupo['nombre_grupo'],
+                'grado': grupo['grado'],
+                'jornada': grupo['jornada']
+            },
+            'curso_info': {
+                'nombre_curso': curso['nombre_curso'],
+                'codigo_curso': curso['codigo_curso'],
+                'area': curso.get('area', '')
+            },
+            'docente_info': {
+                'nombres': docente['nombres'],
+                'apellidos': docente['apellidos'],
+                'codigo_docente': docente.get('codigo_docente', ''),
+                'especialidad': docente.get('especialidad', '')
+            },
+            'salon_asignado': data.get('salon', grupo.get('salon_principal', '')),
+            'activo': True,
             'creado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
         }
         
-        # Si se proporciona un docente, agregarlo
-        if 'teacher_id' in data and data['teacher_id']:
-            teacher_obj_id = string_to_objectid(data['teacher_id'])
-            if teacher_obj_id:
-                docente = usuarios.find_one({'_id': teacher_obj_id, 'rol': 'docente'})
-                if docente:
-                    nuevo_curso['id_docente'] = teacher_obj_id
-                    nuevo_curso['docente_info'] = {
-                        'nombres': docente.get('nombres'),
-                        'apellidos': docente.get('apellidos'),
-                        'codigo_docente': docente.get('codigo_docente', '')
-                    }
-        
-        resultado = cursos.insert_one(nuevo_curso)
+        resultado = asignaciones.insert_one(nueva_asignacion)
         
         # Auditoría
         registrar_auditoria(
             id_usuario=g.userinfo.get('sub'),
-            accion='crear_curso_admin',
-            entidad_afectada='cursos',
+            accion='crear_asignacion_docente',
+            entidad_afectada='asignaciones_docentes',
             id_entidad=str(resultado.inserted_id),
-            detalles=f"Curso creado: {data['codigo_curso']} - {data['nombre_curso']}"
+            detalles=f"Asignación creada: {curso['nombre_curso']} para {grupo['nombre_grupo']} - Período {data['periodo']}"
         )
         
         return jsonify({
             'success': True,
-            'message': 'Curso creado exitosamente',
-            'course_id': str(resultado.inserted_id)
+            'message': 'Asignación docente creada exitosamente',
+            'assignment_id': str(resultado.inserted_id)
         }), 201
         
     except Exception as e:
         print(f"❌ Error en create_course_admin: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+# ==========================================
+#   ENDPOINTS: ASIGNACIONES DOCENTES
+# ==========================================
+
+@app.route('/admin/assignments', methods=['GET'])
+@token_required('administrador')
+def get_assignments():
+    """Obtener todas las asignaciones docentes"""
+    try:
+        from database.db_config import get_asignaciones_collection
+        asignaciones = get_asignaciones_collection()
+        
+        # Filtros opcionales
+        group_id = request.args.get('group_id')
+        teacher_id = request.args.get('teacher_id')
+        periodo = request.args.get('periodo')
+        
+        query = {'activo': True}
+        
+        if group_id:
+            group_obj_id = string_to_objectid(group_id)
+            if group_obj_id:
+                query['id_grupo'] = group_obj_id
+        
+        if teacher_id:
+            teacher_obj_id = string_to_objectid(teacher_id)
+            if teacher_obj_id:
+                query['id_docente'] = teacher_obj_id
+        
+        if periodo:
+            query['periodo'] = periodo
+        
+        asignaciones_list = list(asignaciones.find(query))
+        
+        return jsonify({
+            'success': True,
+            'data': serialize_doc(asignaciones_list),
+            'count': len(asignaciones_list)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_assignments: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/admin/groups/<group_id>/assignments', methods=['GET'])
+@token_required('administrador')
+def get_group_assignments(group_id):
+    """Obtener asignaciones de un grupo específico"""
+    try:
+        from database.db_config import get_asignaciones_collection
+        asignaciones = get_asignaciones_collection()
+        
+        group_obj_id = string_to_objectid(group_id)
+        if not group_obj_id:
+            return jsonify({'success': False, 'error': 'ID de grupo inválido'}), 400
+        
+        periodo = request.args.get('periodo', '1')
+        
+        asignaciones_list = list(asignaciones.find({
+            'id_grupo': group_obj_id,
+            'periodo': periodo,
+            'activo': True
+        }))
+        
+        return jsonify({
+            'success': True,
+            'data': serialize_doc(asignaciones_list),
+            'count': len(asignaciones_list)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_group_assignments: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/assignments/<assignment_id>', methods=['DELETE'])
+@token_required('administrador')
+def delete_assignment(assignment_id):
+    """Eliminar (desactivar) una asignación docente"""
+    try:
+        from database.db_config import get_asignaciones_collection
+        asignaciones = get_asignaciones_collection()
+        
+        assignment_obj_id = string_to_objectid(assignment_id)
+        if not assignment_obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
+        
+        resultado = asignaciones.update_one(
+            {'_id': assignment_obj_id},
+            {'$set': {'activo': False}}
+        )
+        
+        if resultado.modified_count > 0:
+            registrar_auditoria(
+                id_usuario=g.userinfo.get('sub'),
+                accion='eliminar_asignacion',
+                entidad_afectada='asignaciones_docentes',
+                id_entidad=assignment_id,
+                detalles='Asignación desactivada'
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': 'Asignación eliminada exitosamente'
+            }), 200
+        else:
+            return jsonify({'success': False, 'error': 'Asignación no encontrada'}), 404
+        
+    except Exception as e:
+        print(f"❌ Error en delete_assignment: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/admin/courses/<course_id>', methods=['PUT'])
 @token_required('administrador')
@@ -1422,17 +1584,21 @@ def report_students_by_grade():
     try:
         matriculas = get_matriculas_collection()
         
-        # Agregación
+        # ✅ Agrupar por grado desde grupo_info
         pipeline = [
-            {'$match': {'estado': 'activo'}},
+            {'$match': {'estado': 'activa'}},  # ✅ CAMBIO: 'activo' → 'activa'
             {'$group': {
-                '_id': '$curso_info.grado',
+                '_id': '$grupo_info.grado',  # ✅ Usar grupo_info.grado
                 'total_estudiantes': {'$sum': 1}
             }},
             {'$sort': {'_id': 1}}
         ]
         
         results = list(matriculas.aggregate(pipeline))
+        
+        print(f"✅ Reporte estudiantes por grado: {len(results)} grados")
+        if results:
+            print(f"📋 Ejemplo: Grado {results[0]['_id']} → {results[0]['total_estudiantes']} estudiantes")
         
         return jsonify({
             'success': True,
@@ -1441,8 +1607,10 @@ def report_students_by_grade():
         }), 200
         
     except Exception as e:
+        print(f"❌ Error en report_students_by_grade: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/admin/reports/performance-by-course', methods=['GET'])
 @token_required('administrador')
@@ -1543,30 +1711,16 @@ def report_enrollment_history():
     try:
         matriculas = get_matriculas_collection()
         
-        # Filtros opcionales
-        year = request.args.get('year')
-        
-        # ✅ CORREGIR: Agrupar por mes/año en lugar de por 'periodo'
-        pipeline = []
-        
-        # Filtro opcional por año
-        if year:
-            pipeline.append({
-                '$match': {
-                    'fecha_matricula': {
-                        '$gte': datetime(int(year), 1, 1),
-                        '$lt': datetime(int(year) + 1, 1, 1)
-                    }
-                }
-            })
-        
-        # Agrupar por año y mes
-        pipeline.extend([
+        # ✅ AGRUPAR POR MES/AÑO DE fecha_matricula
+        pipeline = [
             {
                 '$addFields': {
-                    # Convertir Timestamp a Date si es necesario
                     'fecha_date': {
-                        '$toDate': '$fecha_matricula'
+                        '$cond': {
+                            'if': {'$eq': [{'$type': '$fecha_matricula'}, 'timestamp']},
+                            'then': {'$toDate': '$fecha_matricula'},
+                            'else': {'$toDate': {'$multiply': ['$fecha_matricula.t', 1000]}}
+                        }
                     }
                 }
             },
@@ -1576,13 +1730,7 @@ def report_enrollment_history():
                         'year': {'$year': '$fecha_date'},
                         'month': {'$month': '$fecha_date'}
                     },
-                    'total_matriculas': {'$sum': 1},
-                    'por_estado': {
-                        '$push': {
-                            'estado': '$estado',
-                            'estudiante': '$estudiante_info.nombres'
-                        }
-                    }
+                    'total_matriculas': {'$sum': 1}
                 }
             },
             {
@@ -1603,17 +1751,19 @@ def report_enrollment_history():
                     'total_matriculas': 1
                 }
             }
-        ])
+        ]
         
         results = list(matriculas.aggregate(pipeline))
         
-        # Si no hay datos, generar datos mock para los últimos 6 meses
+        print(f"✅ Reporte historial matrículas: {len(results)} periodos")
+        
+        # Si no hay datos, generar datos de ejemplo
         if not results:
             from datetime import datetime, timedelta
             now = datetime.now()
             results = []
             
-            for i in range(5, -1, -1):  # Últimos 6 meses
+            for i in range(5, -1, -1):
                 fecha = now - timedelta(days=i*30)
                 results.append({
                     'periodo': f"{fecha.month}/{fecha.year}",

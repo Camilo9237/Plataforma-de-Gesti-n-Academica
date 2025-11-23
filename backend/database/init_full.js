@@ -1,6 +1,6 @@
 // ==========================================
 //   SCRIPT UNIFICADO DE INICIALIZACIÓN
-//   Reinicia, crea esquema e inserta datos
+//   Modelo completo con todas las colecciones
 // ==========================================
 
 use colegio;
@@ -31,21 +31,24 @@ db.createCollection("usuarios", {
         telefono: { bsonType: "string" },
         activo: { bsonType: "bool" },
         creado_en: { bsonType: "timestamp" },
+        keycloak_id: { bsonType: "string" },
         
-        // ✅ CAMPOS ESPECÍFICOS DE ESTUDIANTE
+        // CAMPOS ESPECÍFICOS DE ESTUDIANTE
         codigo_est: { bsonType: "string" },
-        grupo: { 
-          bsonType: "string",
-          description: "Grupo del estudiante (ej: 10°A, 11°B)"
+        id_grupo: { 
+          bsonType: "objectId",
+          description: "Referencia al grupo del estudiante"
         },
         fecha_nacimiento: { bsonType: "date" },
         direccion: { bsonType: "string" },
         nombre_acudiente: { bsonType: "string" },
         telefono_acudiente: { bsonType: "string" },
         
-        // ✅ CAMPOS ESPECÍFICOS DE DOCENTE
+        // CAMPOS ESPECÍFICOS DE DOCENTE
+        codigo_docente: { bsonType: "string" },
         especialidad: { bsonType: "string" },
-        titulo: { bsonType: "string" }
+        titulo: { bsonType: "string" },
+        fecha_ingreso: { bsonType: "date" }
       }
     }
   }
@@ -54,9 +57,11 @@ db.createCollection("usuarios", {
 db.usuarios.createIndex({ correo: 1 }, { unique: true });
 db.usuarios.createIndex({ rol: 1 });
 db.usuarios.createIndex({ codigo_est: 1 }, { unique: true, sparse: true });
-db.usuarios.createIndex({ grupo: 1 }); // ✅ NUEVO ÍNDICE
+db.usuarios.createIndex({ codigo_docente: 1 }, { unique: true, sparse: true });
+db.usuarios.createIndex({ id_grupo: 1 });
+db.usuarios.createIndex({ keycloak_id: 1 });
 
-print("✔ Colección 'usuarios' creada con campo 'grupo'");
+print("✔ Colección 'usuarios' creada");
 
 // ==========================================
 //   COLECCIÓN: GRUPOS
@@ -65,32 +70,17 @@ db.createCollection("grupos", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["nombre_grupo", "grado", "jornada"],
+      required: ["nombre_grupo", "grado", "jornada", "anio_lectivo"],
       properties: {
-        nombre_grupo: { 
-          bsonType: "string",
-          description: "Nombre del grupo (ej: 10°A, 11°B)"
-        },
-        grado: { 
-          bsonType: "string",
-          description: "Grado (6, 7, 8, 9, 10, 11)"
-        },
-        jornada: {
-          enum: ["mañana", "tarde"],
-          description: "Jornada del grupo"
-        },
-        anio_lectivo: { 
-          bsonType: "string",
-          description: "Año escolar (ej: 2025)"
-        },
-        director_grupo: { 
-          bsonType: "objectId",
-          description: "ID del docente director de grupo"
-        },
-        capacidad_max: { 
-          bsonType: "int",
-          description: "Capacidad máxima de estudiantes"
-        },
+        nombre_grupo: { bsonType: "string" },
+        grado: { bsonType: "string" },
+        jornada: { enum: ["mañana", "tarde"] },
+        anio_lectivo: { bsonType: "string" },
+        id_director_grupo: { bsonType: "objectId" },
+        director_info: { bsonType: "object" },
+        capacidad_max: { bsonType: "int" },
+        estudiantes_actuales: { bsonType: "int" },
+        salon_principal: { bsonType: "string" },
         activo: { bsonType: "bool" },
         creado_en: { bsonType: "timestamp" }
       }
@@ -99,9 +89,68 @@ db.createCollection("grupos", {
 });
 
 db.grupos.createIndex({ nombre_grupo: 1, anio_lectivo: 1 }, { unique: true });
-db.grupos.createIndex({ grado: 1 });
+db.grupos.createIndex({ grado: 1, jornada: 1 });
 
 print("✔ Colección 'grupos' creada");
+
+// ==========================================
+//   COLECCIÓN: CURSOS (Asignaturas por grado)
+// ==========================================
+db.createCollection("cursos", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["nombre_curso", "codigo_curso", "grado", "area"],
+      properties: {
+        nombre_curso: { bsonType: "string" },
+        codigo_curso: { bsonType: "string" },
+        grado: { bsonType: "string" },
+        area: { bsonType: "string" },
+        descripcion: { bsonType: "string" },
+        creditos: { bsonType: "int" },
+        intensidad_horaria_semanal: { bsonType: "int" },
+        activo: { bsonType: "bool" },
+        creado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+db.cursos.createIndex({ codigo_curso: 1 }, { unique: true });
+db.cursos.createIndex({ grado: 1, area: 1 });
+
+print("✔ Colección 'cursos' creada");
+
+// ==========================================
+//   COLECCIÓN: ASIGNACIONES_DOCENTES
+// ==========================================
+db.createCollection("asignaciones_docentes", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["id_grupo", "id_curso", "id_docente", "periodo", "anio_lectivo"],
+      properties: {
+        id_grupo: { bsonType: "objectId" },
+        id_curso: { bsonType: "objectId" },
+        id_docente: { bsonType: "objectId" },
+        periodo: { enum: ["1", "2", "3", "4"] },
+        anio_lectivo: { bsonType: "string" },
+        grupo_info: { bsonType: "object" },
+        curso_info: { bsonType: "object" },
+        docente_info: { bsonType: "object" },
+        salon_asignado: { bsonType: "string" },
+        activo: { bsonType: "bool" },
+        creado_en: { bsonType: "timestamp" }
+      }
+    }
+  }
+});
+
+db.asignaciones_docentes.createIndex({ id_grupo: 1, id_curso: 1, periodo: 1 }, { unique: true });
+db.asignaciones_docentes.createIndex({ id_docente: 1, periodo: 1 });
+
+print("✔ Colección 'asignaciones_docentes' creada");
+
 // ==========================================
 //   COLECCIÓN: HORARIOS
 // ==========================================
@@ -109,89 +158,33 @@ db.createCollection("horarios", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["grupo", "anio_lectivo", "horario"],
+      required: ["grupo", "año_lectivo", "horario"],
       properties: {
-        grupo: { 
-          bsonType: "string",
-          description: "Nombre del grupo (ej: 10°A)"
-        },
-        anio_lectivo: { bsonType: "string" },
+        grupo: { bsonType: "string" },
+        año_lectivo: { bsonType: "string" },
         horario: {
           bsonType: "array",
-          description: "Bloques de horario",
           items: {
             bsonType: "object",
             required: ["hora_inicio", "hora_fin", "dia"],
             properties: {
               hora_inicio: { bsonType: "string" },
               hora_fin: { bsonType: "string" },
-              dia: {
-                enum: ["lunes", "martes", "miércoles", "jueves", "viernes"],
-                description: "Día de la semana"
-              },
-              id_curso: { 
-                bsonType: "objectId",
-                description: "Curso que se dicta en este bloque"
-              },
-              curso_info: {
-                bsonType: "object",
-                properties: {
-                  nombre_curso: { bsonType: "string" },
-                  codigo_curso: { bsonType: "string" },
-                  docente_nombres: { bsonType: "string" },
-                  salon: { bsonType: "string" }
-                }
-              }
+              dia: { enum: ["lunes", "martes", "miércoles", "jueves", "viernes"] },
+              id_curso: { bsonType: "objectId" },
+              curso_info: { bsonType: "object" }
             }
           }
         },
-        creado_en: { bsonType: "timestamp" },
-        actualizado_en: { bsonType: "timestamp" }
+        creado_en: { bsonType: "timestamp" }
       }
     }
   }
 });
 
-db.horarios.createIndex({ grupo: 1, anio_lectivo: 1 }, { unique: true });
+db.horarios.createIndex({ grupo: 1, año_lectivo: 1 }, { unique: true });
 
 print("✔ Colección 'horarios' creada");
-// ==========================================
-//   COLECCIÓN: CURSOS
-// ==========================================
-db.createCollection("cursos", {
-  validator: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["nombre_curso", "codigo_curso", "periodo"],
-      properties: {
-        nombre_curso: { bsonType: "string" },
-        codigo_curso: { bsonType: "string" },
-        id_docente: { bsonType: "objectId" },
-        grado: { bsonType: "string" },
-        periodo: {
-          enum: ["1", "2", "3", "4"],
-          description: "Periodo académico"
-        },
-        capacidad_max: { bsonType: "int" },
-        activo: { bsonType: "bool" },
-        docente_info: {
-          bsonType: "object",
-          properties: {
-            nombres: { bsonType: "string" },
-            apellidos: { bsonType: "string" },
-            especialidad: { bsonType: "string" }
-          }
-        }
-      }
-    }
-  }
-});
-
-db.cursos.createIndex({ codigo_curso: 1 }, { unique: true });
-db.cursos.createIndex({ id_docente: 1 });
-db.cursos.createIndex({ grado: 1, periodo: 1 });
-
-print("✔ Colección 'cursos' creada");
 
 // ==========================================
 //   COLECCIÓN: MATRICULAS
@@ -200,144 +193,86 @@ db.createCollection("matriculas", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["id_estudiante", "id_curso"],
+      required: ["id_estudiante", "id_grupo", "anio_lectivo"],
       properties: {
         id_estudiante: { bsonType: "objectId" },
-        id_curso: { bsonType: "objectId" },
+        id_grupo: { bsonType: "objectId" },
+        anio_lectivo: { bsonType: "string" },
         fecha_matricula: { bsonType: "timestamp" },
-        estado: {
-          enum: ["activo", "finalizado", "retirado", "pendiente"],
-          description: "Estado de la matrícula"
-        },
+        estado: { enum: ["activa", "inactiva", "retirada"] },
+        estudiante_info: { bsonType: "object" },
+        grupo_info: { bsonType: "object" },
         calificaciones: {
           bsonType: "array",
           items: {
             bsonType: "object",
-            required: ["tipo", "nota", "peso", "fecha_eval", "periodo"],
             properties: {
-              tipo: { bsonType: "string" },
-              nota: { bsonType: ["double", "int"] },
-              nota_maxima: { bsonType: ["double", "int"] },
-              peso: { bsonType: ["double", "int"] },
-              fecha_eval: { bsonType: "date" },
-              periodo: { bsonType: "string", enum: ["1", "2", "3", "4"] },
-              comentarios: { bsonType: "string" }
+              id_asignacion: { bsonType: "objectId" },
+              periodo: { enum: ["1", "2", "3", "4"] },
+              notas: {
+                bsonType: "array",
+                items: {
+                  bsonType: "object",
+                  properties: {
+                    tipo: { bsonType: "string" },
+                    nota: { bsonType: ["double", "int"] },
+                    nota_maxima: { bsonType: ["double", "int"] },
+                    peso: { bsonType: ["double", "int"] },
+                    fecha_eval: { bsonType: "date" },
+                    comentarios: { bsonType: "string" }
+                  }
+                }
+              }
             }
           }
         },
-        estudiante_info: {
-          bsonType: "object",
-          properties: {
-            nombres: { bsonType: "string" },
-            apellidos: { bsonType: "string" },
-            codigo_est: { bsonType: "string" }
-          }
-        },
-        curso_info: {
-          bsonType: "object",
-          properties: {
-            nombre_curso: { bsonType: "string" },
-            codigo_curso: { bsonType: "string" },
-            grado: { bsonType: "string" },
-            periodo: { bsonType: "string" }
-          }
-        }
+        observaciones: { bsonType: "string" },
+        creado_en: { bsonType: "timestamp" }
       }
     }
   }
 });
 
-db.matriculas.createIndex({ id_estudiante: 1, id_curso: 1 }, { unique: true });
-db.matriculas.createIndex({ id_estudiante: 1 });
-db.matriculas.createIndex({ id_curso: 1 });
+db.matriculas.createIndex({ id_estudiante: 1, anio_lectivo: 1 }, { unique: true });
+db.matriculas.createIndex({ id_estudiante: 1, id_grupo: 1 });
 db.matriculas.createIndex({ estado: 1 });
 
 print("✔ Colección 'matriculas' creada");
 
 // ==========================================
-//   COLECCIÓN: REPORTES
+//   COLECCIÓN: OBSERVACIONES
 // ==========================================
-db.createCollection("reportes", {
+db.createCollection("observaciones", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["tipo_reporte", "generado_por"],
+      required: ["id_estudiante", "id_docente", "tipo", "descripcion", "fecha"],
       properties: {
-        tipo_reporte: {
-          enum: ["boletin", "resumen_curso", "rendimiento_docente", "certificado"]
-        },
-        generado_por: { bsonType: "objectId" },
         id_estudiante: { bsonType: "objectId" },
-        id_curso: { bsonType: "objectId" },
         id_docente: { bsonType: "objectId" },
-        fecha_generado: { bsonType: "timestamp" },
-        datos_reporte: {
-          bsonType: "object",
-          description: "Datos específicos del reporte"
-        }
-      }
-    }
-  }
-});
-
-db.reportes.createIndex({ tipo_reporte: 1 });
-db.reportes.createIndex({ fecha_generado: 1 });
-
-print("✔ Colección 'reportes' creada");
-
-// ==========================================
-//   COLECCIÓN: CERTIFICADOS
-// ==========================================
-db.createCollection("certificados", {
-  validator: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["id_estudiante", "tipo_certificado", "fecha_emision"],
-      properties: {
-        id_estudiante: { bsonType: "objectId" },
         id_curso: { bsonType: "objectId" },
-        tipo_certificado: { bsonType: "string" },
-        fecha_emision: { bsonType: "date" },
-        emitido_por: { bsonType: "objectId" },
-        datos_certificado: {
-          bsonType: "object"
-        }
+        tipo: { enum: ["positiva", "negativa", "neutral"] },
+        categoria: { enum: ["academica", "disciplinaria", "convivencia", "participacion", "otra"] },
+        descripcion: { bsonType: "string" },
+        fecha: { bsonType: "date" },
+        seguimiento: { bsonType: "string" },
+        gravedad: { enum: ["leve", "moderada", "grave"] },
+        notificado_acudiente: { bsonType: "bool" },
+        fecha_notificacion: { bsonType: "date" },
+        estudiante_info: { bsonType: "object" },
+        docente_info: { bsonType: "object" },
+        curso_info: { bsonType: "object" },
+        creado_en: { bsonType: "timestamp" }
       }
     }
   }
 });
 
-db.certificados.createIndex({ id_estudiante: 1 });
-db.certificados.createIndex({ fecha_emision: 1 });
+db.observaciones.createIndex({ id_estudiante: 1, fecha: -1 });
+db.observaciones.createIndex({ id_docente: 1 });
+db.observaciones.createIndex({ tipo: 1, categoria: 1 });
 
-print("✔ Colección 'certificados' creada");
-
-// ==========================================
-//   COLECCIÓN: AUDITORÍA
-// ==========================================
-db.createCollection("auditoria", {
-  validator: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["accion"],
-      properties: {
-        id_usuario: { bsonType: "objectId" },
-        accion: { bsonType: "string" },
-        id_entidad: { bsonType: "objectId" },
-        detalles: { bsonType: ["string", "object"] },
-        fecha: { bsonType: "timestamp" },
-        entidad_afectada: { bsonType: "string" },
-        ip: { bsonType: "string" }
-      }
-    }
-  }
-});
-
-db.auditoria.createIndex({ id_usuario: 1 });
-db.auditoria.createIndex({ accion: 1 });
-db.auditoria.createIndex({ fecha: 1 });
-
-print("✔ Colección 'auditoria' creada");
+print("✔ Colección 'observaciones' creada");
 
 // ==========================================
 //   COLECCIÓN: ASISTENCIA
@@ -350,128 +285,53 @@ db.createCollection("asistencia", {
       properties: {
         id_curso: { bsonType: "objectId" },
         id_docente: { bsonType: "objectId" },
+        id_asignacion: { bsonType: "objectId" },
         fecha: { bsonType: "date" },
-        periodo: { bsonType: "string" },
+        periodo: { enum: ["1", "2", "3", "4"] },
         registros: {
           bsonType: "array",
           items: {
             bsonType: "object",
-            required: ["id_estudiante", "estado"],
             properties: {
               id_estudiante: { bsonType: "objectId" },
-              estudiante_info: {
-                bsonType: "object",
-                properties: {
-                  nombres: { bsonType: "string" },
-                  apellidos: { bsonType: "string" },
-                  codigo_est: { bsonType: "string" }
-                }
-              },
-              estado: {
-                enum: ["presente", "ausente", "tarde", "excusa"]
-              },
+              estudiante_info: { bsonType: "object" },
+              estado: { enum: ["presente", "ausente", "tarde", "excusa"] },
               observaciones: { bsonType: "string" }
             }
           }
         },
-        curso_info: {
-          bsonType: "object",
-          properties: {
-            nombre_curso: { bsonType: "string" },
-            codigo_curso: { bsonType: "string" },
-            grado: { bsonType: "string" }
-          }
-        },
-        creado_en: { bsonType: "timestamp" },
-        actualizado_en: { bsonType: "timestamp" }
+        curso_info: { bsonType: "object" },
+        creado_en: { bsonType: "timestamp" }
       }
     }
   }
 });
 
 db.asistencia.createIndex({ id_curso: 1, fecha: 1 });
-db.asistencia.createIndex({ id_docente: 1 });
-db.asistencia.createIndex({ fecha: -1 });
+db.asistencia.createIndex({ id_docente: 1, fecha: -1 });
 
 print("✔ Colección 'asistencia' creada");
 
 // ==========================================
-//   COLECCIÓN: OBSERVACIONES
+//   COLECCIÓN: REPORTES
 // ==========================================
-db.createCollection("observaciones", {
-  validator: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["id_estudiante", "id_docente", "id_curso", "tipo", "descripcion", "fecha"],
-      properties: {
-        id_estudiante: { bsonType: "objectId" },
-        id_docente: { bsonType: "objectId" },
-        id_curso: { bsonType: "objectId" },
-        tipo: {
-          enum: ["positiva", "negativa", "neutral"]
-        },
-        descripcion: { bsonType: "string" },
-        fecha: { bsonType: "date" },
-        seguimiento: { bsonType: "string" },
-        categoria: { 
-          enum: ["academica", "disciplinaria", "convivencia", "participacion", "otra"]
-        },
-        gravedad: {
-          enum: ["leve", "moderada", "grave"]
-        },
-        notificado_acudiente: { bsonType: "bool" },
-        fecha_notificacion: { bsonType: "date" },
-        estudiante_info: {
-          bsonType: "object",
-          properties: {
-            nombres: { bsonType: "string" },
-            apellidos: { bsonType: "string" },
-            codigo_est: { bsonType: "string" }
-          }
-        },
-        docente_info: {
-          bsonType: "object",
-          properties: {
-            nombres: { bsonType: "string" },
-            apellidos: { bsonType: "string" },
-            especialidad: { bsonType: "string" }
-          }
-        },
-        curso_info: {
-          bsonType: "object",
-          properties: {
-            nombre_curso: { bsonType: "string" },
-            codigo_curso: { bsonType: "string" },
-            grado: { bsonType: "string" }
-          }
-        },
-        archivos_adjuntos: {
-          bsonType: "array",
-          items: {
-            bsonType: "object",
-            properties: {
-              nombre: { bsonType: "string" },
-              url: { bsonType: "string" },
-              tipo: { bsonType: "string" }
-            }
-          }
-        },
-        creado_en: { bsonType: "timestamp" },
-        actualizado_en: { bsonType: "timestamp" }
-      }
-    }
-  }
-});
+db.createCollection("reportes");
+print("✔ Colección 'reportes' creada");
 
-db.observaciones.createIndex({ id_estudiante: 1 });
-db.observaciones.createIndex({ id_docente: 1 });
-db.observaciones.createIndex({ id_curso: 1 });
-db.observaciones.createIndex({ tipo: 1 });
-db.observaciones.createIndex({ fecha: -1 });
-db.observaciones.createIndex({ categoria: 1 });
+// ==========================================
+//   COLECCIÓN: CERTIFICADOS
+// ==========================================
+db.createCollection("certificados");
+print("✔ Colección 'certificados' creada");
 
-print("✔ Colección 'observaciones' creada");
-print("✅ Esquema de base de datos creado exitosamente\n");
+// ==========================================
+//   COLECCIÓN: AUDITORÍA
+// ==========================================
+db.createCollection("auditoria");
+db.auditoria.createIndex({ id_usuario: 1, fecha: -1 });
+print("✔ Colección 'auditoria' creada");
+
+print("\n✅ Esquema de base de datos creado exitosamente\n");
 
 // ==========================================
 //   INSERTAR DATOS DE PRUEBA
@@ -481,7 +341,7 @@ print("🌱 Insertando datos de prueba...\n");
 
 // ===== ADMINISTRADORES =====
 const admin1 = db.usuarios.insertOne({
-  correo: "admin1@colegio.edu.co",
+  correo: "admin@colegio.edu.co",
   rol: "administrador",
   nombres: "Admin",
   apellidos: "Sistema",
@@ -494,884 +354,498 @@ const admin1 = db.usuarios.insertOne({
 print("✔ Administrador creado");
 
 // ===== DOCENTES =====
-const docente1 = db.usuarios.insertOne({
-  correo: "juan.perez@colegio.edu.co",
-  rol: "docente",
-  nombres: "Juan",
-  apellidos: "Pérez",
-  telefono: "3105551234",
-  documento: "10123456",
-  codigo_empleado: "DOC001",
-  especialidad: "Matemáticas",
-  fecha_ingreso: ISODate("2020-01-15"),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
+const docentes = [
+  {
+    correo: "juan.perez@colegio.edu.co",
+    nombres: "Juan Carlos",
+    apellidos: "Pérez Gómez",
+    documento: "10123456",
+    codigo_docente: "DOC001",
+    especialidad: "Matemáticas"
+  },
+  {
+    correo: "maria.lopez@colegio.edu.co",
+    nombres: "María Fernanda",
+    apellidos: "López Martínez",
+    documento: "10234567",
+    codigo_docente: "DOC002",
+    especialidad: "Lengua Castellana"
+  },
+  {
+    correo: "carlos.garcia@colegio.edu.co",
+    nombres: "Carlos Alberto",
+    apellidos: "García Rodríguez",
+    documento: "10345678",
+    codigo_docente: "DOC003",
+    especialidad: "Ciencias Naturales"
+  },
+  {
+    correo: "ana.martinez@colegio.edu.co",
+    nombres: "Ana María",
+    apellidos: "Martínez Torres",
+    documento: "10456789",
+    codigo_docente: "DOC004",
+    especialidad: "Inglés"
+  },
+  {
+    correo: "luis.rodriguez@colegio.edu.co",
+    nombres: "Luis Eduardo",
+    apellidos: "Rodríguez Castro",
+    documento: "10567890",
+    codigo_docente: "DOC005",
+    especialidad: "Educación Física"
+  },
+  {
+    correo: "diana.torres@colegio.edu.co",
+    nombres: "Diana Patricia",
+    apellidos: "Torres Méndez",
+    documento: "10678901",
+    codigo_docente: "DOC006",
+    especialidad: "Ciencias Sociales"
+  }
+];
 
-const docente2 = db.usuarios.insertOne({
-  correo: "maria.lopez@colegio.edu.co",
-  rol: "docente",
-  nombres: "María",
-  apellidos: "López",
-  telefono: "3115552233",
-  documento: "10234567",
-  codigo_empleado: "DOC002",
-  especialidad: "Español",
-  fecha_ingreso: ISODate("2019-03-10"),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const docente3 = db.usuarios.insertOne({
-  correo: "carlos.garcia@colegio.edu.co",
-  rol: "docente",
-  nombres: "Carlos",
-  apellidos: "García",
-  telefono: "3125553344",
-  documento: "10345678",
-  codigo_empleado: "DOC003",
-  especialidad: "Ciencias",
-  fecha_ingreso: ISODate("2021-08-01"),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const docente4 = db.usuarios.insertOne({
-  correo: "ana.martinez@colegio.edu.co",
-  rol: "docente",
-  nombres: "Ana",
-  apellidos: "Martínez",
-  telefono: "3135555555",
-  documento: "10456789",
-  codigo_empleado: "DOC004",
-  especialidad: "Inglés",
-  fecha_ingreso: ISODate("2020-08-01"),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const docente5 = db.usuarios.insertOne({
-  correo: "luis.rodriguez@colegio.edu.co",
-  rol: "docente",
-  nombres: "Luis",
-  apellidos: "Rodríguez",
-  telefono: "3145556666",
-  documento: "10567890",
-  codigo_empleado: "DOC005",
-  especialidad: "Educación Física",
-  fecha_ingreso: ISODate("2021-01-15"),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const docente6 = db.usuarios.insertOne({
-  correo: "diana.torres@colegio.edu.co",
-  rol: "docente",
-  nombres: "Diana",
-  apellidos: "Torres",
-  telefono: "3155557777",
-  documento: "10678901",
-  codigo_empleado: "DOC006",
-  especialidad: "Arte",
-  fecha_ingreso: ISODate("2019-06-10"),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
+const docentesIds = {};
+docentes.forEach(doc => {
+  const id = db.usuarios.insertOne({
+    ...doc,
+    rol: "docente",
+    telefono: "310" + Math.floor(Math.random() * 10000000),
+    titulo: "Licenciado",
+    fecha_ingreso: ISODate("2020-01-15"),
+    activo: true,
+    creado_en: Timestamp()
+  }).insertedId;
+  
+  docentesIds[doc.codigo_docente] = id;
+});
 
 print("✔ 6 Docentes creados");
 
-// ===== ESTUDIANTES =====
-const estudiante1 = db.usuarios.insertOne({
-  correo: "carlos.ramirez@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Carlos",
-  apellidos: "Ramírez",
-  documento: "1001234567",
-  codigo_est: "EST001",
-  fecha_nacimiento: ISODate("2010-05-20"),
-  direccion: "Cra 10 #20-30",
-  nombre_acudiente: "Luis Ramírez",
-  telefono_acudiente: "3005551111",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante2 = db.usuarios.insertOne({
-  correo: "ana.torres@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Ana",
-  apellidos: "Torres",
-  documento: "1001234568",
-  codigo_est: "EST002",
-  fecha_nacimiento: ISODate("2011-09-12"),
-  direccion: "Calle 5 #10-22",
-  nombre_acudiente: "Marta Torres",
-  telefono_acudiente: "3015552222",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante3 = db.usuarios.insertOne({
-  correo: "sofia.mendez@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Sofía",
-  apellidos: "Méndez",
-  documento: "1001234569",
-  codigo_est: "EST003",
-  fecha_nacimiento: ISODate("2010-02-08"),
-  direccion: "Av 3 #12-50",
-  nombre_acudiente: "Roberto Méndez",
-  telefono_acudiente: "3025553333",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante4 = db.usuarios.insertOne({
-  correo: "miguel.santos@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Miguel",
-  apellidos: "Santos",
-  documento: "1001234570",
-  codigo_est: "EST004",
-  fecha_nacimiento: ISODate("2010-11-15"),
-  direccion: "Calle 8 #15-40",
-  nombre_acudiente: "Patricia Santos",
-  telefono_acudiente: "3035554444",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante5 = db.usuarios.insertOne({
-  correo: "laura.gonzalez@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Laura",
-  apellidos: "González",
-  documento: "1001234571",
-  codigo_est: "EST005",
-  fecha_nacimiento: ISODate("2010-03-22"),
-  direccion: "Calle 12 #18-25",
-  nombre_acudiente: "Sandra González",
-  telefono_acudiente: "3045555555",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante6 = db.usuarios.insertOne({
-  correo: "david.martinez@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "David",
-  apellidos: "Martínez",
-  documento: "1001234572",
-  codigo_est: "EST006",
-  fecha_nacimiento: ISODate("2010-07-14"),
-  direccion: "Av 7 #22-30",
-  nombre_acudiente: "Jorge Martínez",
-  telefono_acudiente: "3055556666",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante7 = db.usuarios.insertOne({
-  correo: "valentina.lopez@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Valentina",
-  apellidos: "López",
-  documento: "1001234573",
-  codigo_est: "EST007",
-  fecha_nacimiento: ISODate("2011-01-09"),
-  direccion: "Cra 15 #10-12",
-  nombre_acudiente: "María López",
-  telefono_acudiente: "3065557777",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante8 = db.usuarios.insertOne({
-  correo: "santiago.herrera@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Santiago",
-  apellidos: "Herrera",
-  documento: "1001234574",
-  codigo_est: "EST008",
-  fecha_nacimiento: ISODate("2010-10-25"),
-  direccion: "Calle 20 #5-40",
-  nombre_acudiente: "Carlos Herrera",
-  telefono_acudiente: "3075558888",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante9 = db.usuarios.insertOne({
-  correo: "isabella.castro@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Isabella",
-  apellidos: "Castro",
-  documento: "1001234575",
-  codigo_est: "EST009",
-  fecha_nacimiento: ISODate("2011-04-18"),
-  direccion: "Av 10 #30-15",
-  nombre_acudiente: "Andrea Castro",
-  telefono_acudiente: "3085559999",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante10 = db.usuarios.insertOne({
-  correo: "andres.morales@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Andrés",
-  apellidos: "Morales",
-  documento: "1001234576",
-  codigo_est: "EST010",
-  fecha_nacimiento: ISODate("2010-12-03"),
-  direccion: "Cra 8 #14-28",
-  nombre_acudiente: "Luis Morales",
-  telefono_acudiente: "3095550000",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante11 = db.usuarios.insertOne({
-  correo: "camila.rivera@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Camila",
-  apellidos: "Rivera",
-  documento: "1001234577",
-  codigo_est: "EST011",
-  fecha_nacimiento: ISODate("2011-06-21"),
-  direccion: "Calle 25 #12-35",
-  nombre_acudiente: "Patricia Rivera",
-  telefono_acudiente: "3105551111",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante12 = db.usuarios.insertOne({
-  correo: "juan.diaz@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Juan",
-  apellidos: "Díaz",
-  documento: "1001234578",
-  codigo_est: "EST012",
-  fecha_nacimiento: ISODate("2010-08-30"),
-  direccion: "Av 12 #20-18",
-  nombre_acudiente: "Roberto Díaz",
-  telefono_acudiente: "3115552222",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const estudiante13 = db.usuarios.insertOne({
-  correo: "nicolas.parra@colegio.edu.co",
-  rol: "estudiante",
-  nombres: "Nicolás",
-  apellidos: "Parra",
-  documento: "1001234579",
-  codigo_est: "EST013",
-  fecha_nacimiento: ISODate("2010-04-12"),
-  direccion: "Calle 30 #8-15",
-  nombre_acudiente: "Liliana Parra",
-  telefono_acudiente: "3125553333",
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-print("✔ 13 Estudiantes creados");
-
-// ===== CURSOS =====
-const curso1 = db.cursos.insertOne({
-  nombre_curso: "Matemáticas 10° A",
-  codigo_curso: "MAT10A",
-  id_docente: docente1,
-  grado: "10",
-  periodo: "1",
-  capacidad_max: NumberInt(40),
-  activo: true,
-  docente_info: {
-    nombres: "Juan",
-    apellidos: "Pérez",
-    especialidad: "Matemáticas"
-  }
-}).insertedId;
-
-const curso2 = db.cursos.insertOne({
-  nombre_curso: "Español 10° A",
-  codigo_curso: "ESP10A",
-  id_docente: docente2,
-  grado: "10",
-  periodo: "1",
-  capacidad_max: NumberInt(40),
-  activo: true,
-  docente_info: {
-    nombres: "María",
-    apellidos: "López",
-    especialidad: "Español"
-  }
-}).insertedId;
-
-const curso3 = db.cursos.insertOne({
-  nombre_curso: "Ciencias 10° A",
-  codigo_curso: "CIE10A",
-  id_docente: docente3,
-  grado: "10",
-  periodo: "1",
-  capacidad_max: NumberInt(40),
-  activo: true,
-  docente_info: {
-    nombres: "Carlos",
-    apellidos: "García",
-    especialidad: "Ciencias"
-  }
-}).insertedId;
-
-const curso4 = db.cursos.insertOne({
-  nombre_curso: "Matemáticas 10° A - Periodo 2",
-  codigo_curso: "MAT10B",
-  id_docente: docente1,
-  grado: "10",
-  periodo: "2",
-  capacidad_max: NumberInt(40),
-  activo: true,
-  docente_info: {
-    nombres: "Juan",
-    apellidos: "Pérez",
-    especialidad: "Matemáticas"
-  }
-}).insertedId;
-
-const curso5 = db.cursos.insertOne({
-  nombre_curso: "Español 11° A",
-  codigo_curso: "ESP11A",
-  id_docente: docente2,
-  grado: "11",
-  periodo: "1",
-  capacidad_max: NumberInt(35),
-  activo: true,
-  docente_info: {
-    nombres: "María",
-    apellidos: "López",
-    especialidad: "Español"
-  }
-}).insertedId;
-
-const curso6 = db.cursos.insertOne({
-  nombre_curso: "Español 10° B",
-  codigo_curso: "ESP10B",
-  id_docente: docente2,
-  grado: "10",
-  periodo: "1",
-  capacidad_max: NumberInt(38),
-  activo: true,
-  docente_info: {
-    nombres: "María",
-    apellidos: "López",
-    especialidad: "Español"
-  }
-}).insertedId;
-
-const curso7 = db.cursos.insertOne({
-  nombre_curso: "Literatura 11° A",
-  codigo_curso: "LIT11A",
-  id_docente: docente2,
-  grado: "11",
-  periodo: "1",
-  capacidad_max: NumberInt(35),
-  activo: true,
-  docente_info: {
-    nombres: "María",
-    apellidos: "López",
-    especialidad: "Español"
-  }
-}).insertedId;
-
-const curso8 = db.cursos.insertOne({
-  nombre_curso: "Matemáticas 11° A",
-  codigo_curso: "MAT11A",
-  id_docente: docente1,
-  grado: "11",
-  periodo: "1",
-  capacidad_max: NumberInt(35),
-  activo: true,
-  docente_info: {
-    nombres: "Juan",
-    apellidos: "Pérez",
-    especialidad: "Matemáticas"
-  }
-}).insertedId;
-
-const curso9 = db.cursos.insertOne({
-  nombre_curso: "Álgebra 10° B",
-  codigo_curso: "ALG10B",
-  id_docente: docente1,
-  grado: "10",
-  periodo: "1",
-  capacidad_max: NumberInt(38),
-  activo: true,
-  docente_info: {
-    nombres: "Juan",
-    apellidos: "Pérez",
-    especialidad: "Matemáticas"
-  }
-}).insertedId;
-
-const curso10 = db.cursos.insertOne({
-  nombre_curso: "Ciencias 11° A",
-  codigo_curso: "CIE11A",
-  id_docente: docente3,
-  grado: "11",
-  periodo: "1",
-  capacidad_max: NumberInt(35),
-  activo: true,
-  docente_info: {
-    nombres: "Carlos",
-    apellidos: "García",
-    especialidad: "Ciencias"
-  }
-}).insertedId;
-
-const curso11 = db.cursos.insertOne({
-  nombre_curso: "Inglés 10° A",
-  codigo_curso: "ING10A",
-  id_docente: docente4,
-  grado: "10",
-  periodo: "1",
-  capacidad_max: NumberInt(40),
-  activo: true,
-  docente_info: {
-    nombres: "Ana",
-    apellidos: "Martínez",
-    especialidad: "Inglés"
-  }
-}).insertedId;
-
-const curso12 = db.cursos.insertOne({
-  nombre_curso: "Inglés 11° A",
-  codigo_curso: "ING11A",
-  id_docente: docente4,
-  grado: "11",
-  periodo: "1",
-  capacidad_max: NumberInt(35),
-  activo: true,
-  docente_info: {
-    nombres: "Ana",
-    apellidos: "Martínez",
-    especialidad: "Inglés"
-  }
-}).insertedId;
-
-const curso13 = db.cursos.insertOne({
-  nombre_curso: "Educación Física 10° A",
-  codigo_curso: "EDF10A",
-  id_docente: docente5,
-  grado: "10",
-  periodo: "1",
-  capacidad_max: NumberInt(45),
-  activo: true,
-  docente_info: {
-    nombres: "Luis",
-    apellidos: "Rodríguez",
-    especialidad: "Educación Física"
-  }
-}).insertedId;
-
-print("✔ 13 Cursos creados");
-
-// ==========================================
-//   FUNCIÓN PARA GENERAR CALIFICACIONES
-//   CON PERIODOS (1, 2, 3, 4)
-// ==========================================
-
-function generarCalificacionesPorPeriodo() {
-  const tipos = ["Parcial", "Taller", "Quiz"];
-  const calificaciones = [];
-  
-  // Generar calificaciones para cada uno de los 4 periodos
-  for (let periodo = 1; periodo <= 4; periodo++) {
-    tipos.forEach((tipo, index) => {
-      const nota = Math.random() * 2 + 3; // Entre 3.0 y 5.0
-      const mes = periodo - 1; // 0=Enero, 1=Febrero, etc.
-      const dia = 5 + (index * 15); // Distribuir en el mes
-      
-      calificaciones.push({
-        tipo: tipo,
-        nota: Number(nota.toFixed(1)),
-        nota_maxima: Number(5.0),
-        peso: Number(0.33),
-        periodo: String(periodo), // "1", "2", "3", "4"
-        fecha_eval: new Date(2025, mes, dia),
-        comentarios: nota >= 4.0 ? "Buen desempeño" : "Debe reforzar"
-      });
-    });
-  }
-  
-  return calificaciones;
-}
-
-print("✔ Función generarCalificacionesPorPeriodo() definida");
-
-// ==========================================
-//   INSERTAR MATRÍCULAS CON CALIFICACIONES
-// ==========================================
-
-// Estudiantes para cada curso
-const matriculasData = [
-  // Matemáticas 10° A
-  { estudiantes: [estudiante1, estudiante2, estudiante3, estudiante4], curso: curso1, cursoInfo: { nombre_curso: "Matemáticas 10° A", codigo_curso: "MAT10A", grado: "10", periodo: "1" } },
-  // Español 10° A
-  { estudiantes: [estudiante1, estudiante2, estudiante11, estudiante12], curso: curso2, cursoInfo: { nombre_curso: "Español 10° A", codigo_curso: "ESP10A", grado: "10", periodo: "1" } },
-  // Ciencias 10° A
-  { estudiantes: [estudiante1, estudiante3, estudiante4, estudiante13], curso: curso3, cursoInfo: { nombre_curso: "Ciencias 10° A", codigo_curso: "CIE10A", grado: "10", periodo: "1" } },
-  // Español 11° A
-  { estudiantes: [estudiante5, estudiante6, estudiante7, estudiante8, estudiante9, estudiante10], curso: curso5, cursoInfo: { nombre_curso: "Español 11° A", codigo_curso: "ESP11A", grado: "11", periodo: "1" } },
-  // Español 10° B
-  { estudiantes: [estudiante1, estudiante2, estudiante11, estudiante12], curso: curso6, cursoInfo: { nombre_curso: "Español 10° B", codigo_curso: "ESP10B", grado: "10", periodo: "1" } },
-  // Literatura 11° A
-  { estudiantes: [estudiante5, estudiante6, estudiante7, estudiante8], curso: curso7, cursoInfo: { nombre_curso: "Literatura 11° A", codigo_curso: "LIT11A", grado: "11", periodo: "1" } },
-  // Matemáticas 11° A
-  { estudiantes: [estudiante5, estudiante6, estudiante7, estudiante9, estudiante10], curso: curso8, cursoInfo: { nombre_curso: "Matemáticas 11° A", codigo_curso: "MAT11A", grado: "11", periodo: "1" } },
-  // Inglés 10° A
-  { estudiantes: [estudiante1, estudiante2, estudiante3, estudiante4, estudiante11, estudiante12], curso: curso11, cursoInfo: { nombre_curso: "Inglés 10° A", codigo_curso: "ING10A", grado: "10", periodo: "1" } }
+// ===== CURSOS (Asignaturas por grado) =====
+const asignaturas = [
+  { nombre: "Matemáticas", codigo: "MAT", area: "matemáticas", creditos: 4, intensidad: 5 },
+  { nombre: "Español", codigo: "ESP", area: "lenguaje", creditos: 4, intensidad: 5 },
+  { nombre: "Inglés", codigo: "ING", area: "inglés", creditos: 3, intensidad: 4 },
+  { nombre: "Ciencias Naturales", codigo: "CIE", area: "ciencias", creditos: 3, intensidad: 4 },
+  { nombre: "Ciencias Sociales", codigo: "SOC", area: "sociales", creditos: 3, intensidad: 4 },
+  { nombre: "Educación Física", codigo: "EDF", area: "educación_física", creditos: 2, intensidad: 2 }
 ];
 
-let totalMatriculas = 0;
+const cursosIds = {};
 
-matriculasData.forEach((data) => {
-  data.estudiantes.forEach((estudianteId) => {
-    const estudiante = db.usuarios.findOne({ _id: estudianteId });
+["10", "11"].forEach(grado => {
+  asignaturas.forEach(asig => {
+    const codigo = asig.codigo + grado;
+    const id = db.cursos.insertOne({
+      nombre_curso: asig.nombre,
+      codigo_curso: codigo,
+      grado: grado,
+      area: asig.area,
+      descripcion: `${asig.nombre} para grado ${grado}°`,
+      creditos: NumberInt(asig.creditos),
+      intensidad_horaria_semanal: NumberInt(asig.intensidad),
+      activo: true,
+      creado_en: Timestamp()
+    }).insertedId;
     
-    db.matriculas.insertOne({
-      id_estudiante: estudianteId,
-      id_curso: data.curso,
-      fecha_matricula: Timestamp(),
-      estado: "activo",
-      calificaciones: generarCalificacionesPorPeriodo(), // ✅ 12 calificaciones (3 por periodo x 4 periodos)
+    cursosIds[codigo] = id;
+  });
+});
+
+print("✔ 12 Asignaturas creadas");
+
+// ===== GRUPOS =====
+const grupos = [
+  { nombre: "10°A", grado: "10", jornada: "mañana", director: docentesIds["DOC001"], capacidad: 40, salon: "Aula 201" },
+  { nombre: "10°B", grado: "10", jornada: "mañana", director: docentesIds["DOC002"], capacidad: 38, salon: "Aula 202" },
+  { nombre: "11°A", grado: "11", jornada: "mañana", director: docentesIds["DOC003"], capacidad: 35, salon: "Aula 301" },
+  { nombre: "11°B", grado: "11", jornada: "mañana", director: docentesIds["DOC004"], capacidad: 35, salon: "Aula 302" }
+];
+
+const gruposIds = {};
+
+grupos.forEach(grupo => {
+  const director = db.usuarios.findOne({ _id: grupo.director });
+  
+  const id = db.grupos.insertOne({
+    nombre_grupo: grupo.nombre,
+    grado: grupo.grado,
+    jornada: grupo.jornada,
+    anio_lectivo: "2025",
+    id_director_grupo: grupo.director,
+    director_info: {
+      nombres: director.nombres,
+      apellidos: director.apellidos,
+      codigo_docente: director.codigo_docente
+    },
+    capacidad_max: NumberInt(grupo.capacidad),
+    estudiantes_actuales: NumberInt(0),
+    salon_principal: grupo.salon,
+    activo: true,
+    creado_en: Timestamp()
+  }).insertedId;
+  
+  gruposIds[grupo.nombre] = id;
+});
+
+print("✔ 4 Grupos creados");
+
+// ===== ESTUDIANTES =====
+const estudiantes = [
+  { codigo: "EST001", nombres: "Carlos", apellidos: "Ramírez López", doc: "1001234567", grupo: "10°A", nacimiento: "2010-05-20", acudiente: "Luis Ramírez", tel_acudiente: "3005551111" },
+  { codigo: "EST002", nombres: "Ana", apellidos: "Torres Gómez", doc: "1001234568", grupo: "10°A", nacimiento: "2010-09-12", acudiente: "Marta Torres", tel_acudiente: "3015552222" },
+  { codigo: "EST003", nombres: "Sofía", apellidos: "Méndez Castro", doc: "1001234569", grupo: "10°A", nacimiento: "2010-02-08", acudiente: "Roberto Méndez", tel_acudiente: "3025553333" },
+  { codigo: "EST004", nombres: "Miguel", apellidos: "Santos Díaz", doc: "1001234570", grupo: "10°B", nacimiento: "2010-11-15", acudiente: "Patricia Santos", tel_acudiente: "3035554444" },
+  { codigo: "EST005", nombres: "Laura", apellidos: "González Ruiz", doc: "1001234571", grupo: "10°B", nacimiento: "2010-03-22", acudiente: "Sandra González", tel_acudiente: "3045555555" },
+  { codigo: "EST006", nombres: "David", apellidos: "Martínez Vargas", doc: "1001234572", grupo: "10°B", nacimiento: "2010-07-14", acudiente: "Jorge Martínez", tel_acudiente: "3055556666" },
+  { codigo: "EST007", nombres: "Valentina", apellidos: "López Parra", doc: "1001234573", grupo: "11°A", nacimiento: "2009-01-09", acudiente: "María López", tel_acudiente: "3065557777" },
+  { codigo: "EST008", nombres: "Santiago", apellidos: "Herrera Ortiz", doc: "1001234574", grupo: "11°A", nacimiento: "2009-10-25", acudiente: "Carlos Herrera", tel_acudiente: "3075558888" },
+  { codigo: "EST009", nombres: "Isabella", apellidos: "Castro Rojas", doc: "1001234575", grupo: "11°A", nacimiento: "2009-04-18", acudiente: "Andrea Castro", tel_acudiente: "3085559999" },
+  { codigo: "EST010", nombres: "Andrés", apellidos: "Morales Silva", doc: "1001234576", grupo: "11°B", nacimiento: "2009-12-03", acudiente: "Luis Morales", tel_acudiente: "3095550000" },
+  { codigo: "EST011", nombres: "Camila", apellidos: "Rivera Pérez", doc: "1001234577", grupo: "11°B", nacimiento: "2009-06-21", acudiente: "Patricia Rivera", tel_acudiente: "3105551111" },
+  { codigo: "EST012", nombres: "Juan", apellidos: "Díaz Ramírez", doc: "1001234578", grupo: "11°B", nacimiento: "2009-08-30", acudiente: "Roberto Díaz", tel_acudiente: "3115552222" }
+];
+
+const estudiantesIds = {};
+
+estudiantes.forEach(est => {
+  const id = db.usuarios.insertOne({
+    correo: `${est.nombres.toLowerCase()}.${est.apellidos.split(' ')[0].toLowerCase()}@colegio.edu.co`,
+    rol: "estudiante",
+    nombres: est.nombres,
+    apellidos: est.apellidos,
+    documento: est.doc,
+    codigo_est: est.codigo,
+    id_grupo: gruposIds[est.grupo],
+    fecha_nacimiento: ISODate(est.nacimiento),
+    direccion: `Calle ${Math.floor(Math.random() * 50)} #${Math.floor(Math.random() * 50)}-${Math.floor(Math.random() * 100)}`,
+    nombre_acudiente: est.acudiente,
+    telefono_acudiente: est.tel_acudiente,
+    telefono: "320" + Math.floor(Math.random() * 10000000),
+    activo: true,
+    creado_en: Timestamp()
+  }).insertedId;
+  
+  estudiantesIds[est.codigo] = { id: id, grupo: est.grupo };
+  
+  db.grupos.updateOne(
+    { _id: gruposIds[est.grupo] },
+    { $inc: { estudiantes_actuales: 1 } }
+  );
+});
+
+print("✔ 12 Estudiantes creados");
+
+// ===== ASIGNACIONES DOCENTES =====
+const asignacionesConfig = [
+  { grupo: "10°A", curso: "MAT10", docente: "DOC001" },
+  { grupo: "10°A", curso: "ESP10", docente: "DOC002" },
+  { grupo: "10°A", curso: "ING10", docente: "DOC004" },
+  { grupo: "10°A", curso: "CIE10", docente: "DOC003" },
+  { grupo: "10°A", curso: "SOC10", docente: "DOC006" },
+  { grupo: "10°A", curso: "EDF10", docente: "DOC005" },
+  { grupo: "10°B", curso: "MAT10", docente: "DOC001" },
+  { grupo: "10°B", curso: "ESP10", docente: "DOC002" },
+  { grupo: "10°B", curso: "ING10", docente: "DOC004" },
+  { grupo: "10°B", curso: "CIE10", docente: "DOC003" },
+  { grupo: "10°B", curso: "SOC10", docente: "DOC006" },
+  { grupo: "10°B", curso: "EDF10", docente: "DOC005" },
+  { grupo: "11°A", curso: "MAT11", docente: "DOC001" },
+  { grupo: "11°A", curso: "ESP11", docente: "DOC002" },
+  { grupo: "11°A", curso: "ING11", docente: "DOC004" },
+  { grupo: "11°A", curso: "CIE11", docente: "DOC003" },
+  { grupo: "11°A", curso: "SOC11", docente: "DOC006" },
+  { grupo: "11°A", curso: "EDF11", docente: "DOC005" },
+  { grupo: "11°B", curso: "MAT11", docente: "DOC001" },
+  { grupo: "11°B", curso: "ESP11", docente: "DOC002" },
+  { grupo: "11°B", curso: "ING11", docente: "DOC004" },
+  { grupo: "11°B", curso: "CIE11", docente: "DOC003" },
+  { grupo: "11°B", curso: "SOC11", docente: "DOC006" },
+  { grupo: "11°B", curso: "EDF11", docente: "DOC005" }
+];
+
+const asignacionesIds = {};
+
+asignacionesConfig.forEach(asig => {
+  const grupo = db.grupos.findOne({ nombre_grupo: asig.grupo });
+  const curso = db.cursos.findOne({ codigo_curso: asig.curso });
+  const docente = db.usuarios.findOne({ codigo_docente: asig.docente });
+  
+  const asignacionId = db.asignaciones_docentes.insertOne({
+    id_grupo: grupo._id,
+    id_curso: curso._id,
+    id_docente: docente._id,
+    periodo: "1",
+    anio_lectivo: "2025",
+    grupo_info: {
+      nombre_grupo: grupo.nombre_grupo,
+      grado: grupo.grado,
+      jornada: grupo.jornada
+    },
+    curso_info: {
+      nombre_curso: curso.nombre_curso,
+      codigo_curso: curso.codigo_curso,
+      area: curso.area
+    },
+    docente_info: {
+      nombres: docente.nombres,
+      apellidos: docente.apellidos,
+      codigo_docente: docente.codigo_docente,
+      especialidad: docente.especialidad
+    },
+    salon_asignado: grupo.salon_principal,
+    activo: true,
+    creado_en: Timestamp()
+  }).insertedId;
+  
+  const key = `${asig.grupo}_${asig.curso}`;
+  asignacionesIds[key] = asignacionId;
+});
+
+print("✔ 24 Asignaciones docentes creadas");
+
+// ===== MATRÍCULAS CON CALIFICACIONES =====
+function generarCalificaciones(asignacionId, periodo) {
+  const tipos = ["Parcial", "Taller", "Quiz", "Proyecto"];
+  const notas = [];
+  
+  tipos.forEach((tipo, index) => {
+    const nota = parseFloat((Math.random() * 2 + 3).toFixed(1)); // 3.0 - 5.0
+    notas.push({
+      tipo: tipo,
+      nota: nota,
+      nota_maxima: 5.0,
+      peso: index === 3 ? 0.25 : 0.25,
+      fecha_eval: new Date(2025, parseInt(periodo) - 1, 5 + (index * 7)),
+      comentarios: nota >= 4.0 ? "Buen desempeño" : "Debe mejorar"
+    });
+  });
+  
+  return {
+    id_asignacion: asignacionId,
+    periodo: periodo,
+    notas: notas
+  };
+}
+
+Object.entries(estudiantesIds).forEach(([codigo, data]) => {
+  const estudiante = db.usuarios.findOne({ codigo_est: codigo });
+  const grupo = db.grupos.findOne({ _id: estudiante.id_grupo });
+  
+  // Obtener asignaciones del grupo
+  const asignacionesGrupo = db.asignaciones_docentes.find({
+    id_grupo: grupo._id,
+    periodo: "1"
+  }).toArray();
+  
+  // Generar calificaciones para cada asignación
+  const calificaciones = asignacionesGrupo.map(asig => 
+    generarCalificaciones(asig._id, "1")
+  );
+  
+  db.matriculas.insertOne({
+    id_estudiante: estudiante._id,
+    id_grupo: grupo._id,
+    anio_lectivo: "2025",
+    fecha_matricula: Timestamp(),
+    estado: "activa",
+    estudiante_info: {
+      nombres: estudiante.nombres,
+      apellidos: estudiante.apellidos,
+      codigo_est: estudiante.codigo_est,
+      documento: estudiante.documento
+    },
+    grupo_info: {
+      nombre_grupo: grupo.nombre_grupo,
+      grado: grupo.grado,
+      jornada: grupo.jornada
+    },
+    calificaciones: calificaciones,
+    observaciones: "Matrícula regular 2025",
+    creado_en: Timestamp()
+  });
+});
+
+print("✔ 12 Matrículas con calificaciones creadas");
+
+// ===== HORARIOS =====
+const horasClases = [
+  "07:00-08:00",
+  "08:00-09:00",
+  "09:00-10:00",
+  "10:30-11:30", // Descanso 10:00-10:30
+  "11:30-12:30"
+];
+
+const dias = ["lunes", "martes", "miércoles", "jueves", "viernes"];
+
+["10°A", "10°B", "11°A", "11°B"].forEach(nombreGrupo => {
+  const grupo = db.grupos.findOne({ nombre_grupo: nombreGrupo });
+  const asignacionesGrupo = db.asignaciones_docentes.find({
+    id_grupo: grupo._id,
+    periodo: "1"
+  }).toArray();
+  
+  const horario = [];
+  let asignacionIndex = 0;
+  
+  dias.forEach(dia => {
+    horasClases.forEach(hora => {
+      const [inicio, fin] = hora.split('-');
+      const asignacion = asignacionesGrupo[asignacionIndex % asignacionesGrupo.length];
+      
+      horario.push({
+        hora_inicio: inicio,
+        hora_fin: fin,
+        dia: dia,
+        id_curso: asignacion.id_curso,
+        curso_info: {
+          nombre_curso: asignacion.curso_info.nombre_curso,
+          codigo_curso: asignacion.curso_info.codigo_curso,
+          docente_nombres: `${asignacion.docente_info.nombres} ${asignacion.docente_info.apellidos}`,
+          salon: asignacion.salon_asignado
+        }
+      });
+      
+      asignacionIndex++;
+    });
+  });
+  
+  db.horarios.insertOne({
+    grupo: nombreGrupo,
+    año_lectivo: "2025",
+    horario: horario,
+    creado_en: Timestamp()
+  });
+});
+
+print("✔ 4 Horarios creados");
+
+// ===== OBSERVACIONES =====
+const tiposObservaciones = [
+  { tipo: "positiva", categoria: "academica", descripcion: "Excelente participación en clase", gravedad: null },
+  { tipo: "positiva", categoria: "convivencia", descripcion: "Demuestra valores de respeto y solidaridad", gravedad: null },
+  { tipo: "negativa", categoria: "disciplinaria", descripcion: "Interrumpe constantemente la clase", gravedad: "leve" },
+  { tipo: "negativa", categoria: "academica", descripcion: "No entrega tareas", gravedad: "moderada" }
+];
+
+// Crear 2 observaciones por estudiante
+Object.entries(estudiantesIds).forEach(([codigo, data]) => {
+  const estudiante = db.usuarios.findOne({ codigo_est: codigo });
+  const grupo = db.grupos.findOne({ _id: estudiante.id_grupo });
+  const asignacionesGrupo = db.asignaciones_docentes.find({
+    id_grupo: grupo._id
+  }).toArray();
+  
+  // Seleccionar 2 observaciones aleatorias
+  for (let i = 0; i < 2; i++) {
+    const obsTemplate = tiposObservaciones[Math.floor(Math.random() * tiposObservaciones.length)];
+    const asignacion = asignacionesGrupo[Math.floor(Math.random() * asignacionesGrupo.length)];
+    const docente = db.usuarios.findOne({ _id: asignacion.id_docente });
+    
+    db.observaciones.insertOne({
+      id_estudiante: estudiante._id,
+      id_docente: docente._id,
+      id_curso: asignacion.id_curso,
+      tipo: obsTemplate.tipo,
+      categoria: obsTemplate.categoria,
+      descripcion: obsTemplate.descripcion,
+      fecha: new Date(2025, Math.floor(Math.random() * 3), Math.floor(Math.random() * 28) + 1),
+      seguimiento: obsTemplate.tipo === "negativa" ? "Citación a acudiente programada" : "Felicitación verbal",
+      gravedad: obsTemplate.gravedad,
+      notificado_acudiente: obsTemplate.tipo === "negativa",
+      fecha_notificacion: obsTemplate.tipo === "negativa" ? new Date() : null,
       estudiante_info: {
         nombres: estudiante.nombres,
         apellidos: estudiante.apellidos,
         codigo_est: estudiante.codigo_est
       },
-      curso_info: data.cursoInfo
+      docente_info: {
+        nombres: docente.nombres,
+        apellidos: docente.apellidos,
+        especialidad: docente.especialidad
+      },
+      curso_info: asignacion.curso_info,
+      creado_en: Timestamp()
     });
-    
-    totalMatriculas++;
-  });
+  }
 });
 
-print("✔ " + totalMatriculas + " Matrículas creadas con calificaciones distribuidas en 4 periodos");
+print("✔ 24 Observaciones creadas");
 
-// ==========================================
-//   AUDITORÍA
-// ==========================================
+// ===== ASISTENCIA =====
+// Crear registros de asistencia para los últimos 5 días
+for (let dia = 0; dia < 5; dia++) {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() - dia);
+  
+  // Para cada asignación crear un registro de asistencia
+  const asignaciones = db.asignaciones_docentes.find({ periodo: "1" }).toArray();
+  
+  asignaciones.forEach(asignacion => {
+    const grupo = db.grupos.findOne({ _id: asignacion.id_grupo });
+    const estudiantes_grupo = db.usuarios.find({
+      id_grupo: grupo._id,
+      rol: "estudiante"
+    }).toArray();
+    
+    const registros = estudiantes_grupo.map(est => {
+      const estados = ["presente", "presente", "presente", "ausente", "tarde"];
+      const estado = estados[Math.floor(Math.random() * estados.length)];
+      
+      return {
+        id_estudiante: est._id,
+        estudiante_info: {
+          nombres: est.nombres,
+          apellidos: est.apellidos,
+          codigo_est: est.codigo_est
+        },
+        estado: estado,
+        observaciones: estado === "ausente" ? "Falta justificada" : ""
+      };
+    });
+    
+    db.asistencia.insertOne({
+      id_curso: asignacion.id_curso,
+      id_docente: asignacion.id_docente,
+      id_asignacion: asignacion._id,
+      fecha: fecha,
+      periodo: "1",
+      registros: registros,
+      curso_info: asignacion.curso_info,
+      creado_en: Timestamp()
+    });
+  });
+}
 
+print("✔ Registros de asistencia creados");
+
+// ===== AUDITORÍA =====
 db.auditoria.insertOne({
   id_usuario: admin1,
   accion: "INICIALIZAR_BD_COMPLETA",
   entidad_afectada: "sistema",
-  detalles: { mensaje: "Base de datos inicializada con esquema y datos completos" },
+  detalles: {
+    mensaje: "Base de datos inicializada con estructura completa",
+    colecciones: [
+      "usuarios", "grupos", "cursos", "asignaciones_docentes",
+      "horarios", "matriculas", "observaciones", "asistencia"
+    ]
+  },
   fecha: Timestamp()
 });
 
 print("✔ Registro de auditoría creado");
-// ==========================================
-//   SEED DATA: GRUPOS Y HORARIOS
-// ==========================================
 
+print("\n✅ BASE DE DATOS INICIALIZADA COMPLETAMENTE\n");
 
-print("\n🎓 Creando grupos...");
-
-// Obtener docentes para directores de grupo
-const docente1 = db.usuarios.findOne({correo: "juan.perez@colegio.edu.co"})._id;
-const docente2 = db.usuarios.findOne({correo: "maria.lopez@colegio.edu.co"})._id;
-const docente3 = db.usuarios.findOne({correo: "carlos.garcia@colegio.edu.co"})._id;
-
-// ==========================================
-//   GRUPOS GRADO 10
-// ==========================================
-
-const grupo10A = db.grupos.insertOne({
-  nombre_grupo: "10°A",
-  grado: "10",
-  jornada: "mañana",
-  anio_lectivo: "2025",
-  director_grupo: docente1,
-  capacidad_max: NumberInt(40),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const grupo10B = db.grupos.insertOne({
-  nombre_grupo: "10°B",
-  grado: "10",
-  jornada: "mañana",
-  anio_lectivo: "2025",
-  director_grupo: docente2,
-  capacidad_max: NumberInt(38),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-print("✔ Grupos de grado 10 creados");
-
-// ==========================================
-//   GRUPOS GRADO 11
-// ==========================================
-
-const grupo11A = db.grupos.insertOne({
-  nombre_grupo: "11°A",
-  grado: "11",
-  jornada: "mañana",
-  anio_lectivo: "2025",
-  director_grupo: docente3,
-  capacidad_max: NumberInt(35),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-const grupo11B = db.grupos.insertOne({
-  nombre_grupo: "11°B",
-  grado: "11",
-  jornada: "mañana",
-  anio_lectivo: "2025",
-  director_grupo: docente1,
-  capacidad_max: NumberInt(35),
-  activo: true,
-  creado_en: Timestamp()
-}).insertedId;
-
-print("✔ Grupos de grado 11 creados");
-
-// ==========================================
-//   ASIGNAR ESTUDIANTES A GRUPOS
-// ==========================================
-
-// Grupo 10°A
-db.usuarios.updateMany(
-  { codigo_est: { $in: ["EST001", "EST002", "EST003", "EST004"] } },
-  { $set: { grupo: "10°A" } }
-);
-
-// Grupo 10°B
-db.usuarios.updateMany(
-  { codigo_est: { $in: ["EST011", "EST012"] } },
-  { $set: { grupo: "10°B" } }
-);
-
-// Grupo 11°A
-db.usuarios.updateMany(
-  { codigo_est: { $in: ["EST005", "EST006", "EST007", "EST008"] } },
-  { $set: { grupo: "11°A" } }
-);
-
-// Grupo 11°B
-db.usuarios.updateMany(
-  { codigo_est: { $in: ["EST009", "EST010"] } },
-  { $set: { grupo: "11°B" } }
-);
-
-print("✔ Estudiantes asignados a grupos");
-
-// ==========================================
-//   ACTUALIZAR CURSOS CON CAMPO GRUPO
-// ==========================================
-
-// Los cursos ahora pertenecen a un grupo específico
-db.cursos.updateOne(
-  { codigo_curso: "MAT10A" },
-  { $set: { grupo: "10°A" } }
-);
-
-db.cursos.updateOne(
-  { codigo_curso: "ESP10A" },
-  { $set: { grupo: "10°A" } }
-);
-
-db.cursos.updateOne(
-  { codigo_curso: "CIE10A" },
-  { $set: { grupo: "10°A" } }
-);
-
-db.cursos.updateOne(
-  { codigo_curso: "ESP10B" },
-  { $set: { grupo: "10°B" } }
-);
-
-db.cursos.updateOne(
-  { codigo_curso: "ESP11A" },
-  { $set: { grupo: "11°A" } }
-);
-
-db.cursos.updateOne(
-  { codigo_curso: "LIT11A" },
-  { $set: { grupo: "11°A" } }
-);
-
-db.cursos.updateOne(
-  { codigo_curso: "MAT11A" },
-  { $set: { grupo: "11°A" } }
-);
-
-print("✔ Cursos actualizados con campo 'grupo'");
-
-// ==========================================
-//   CREAR HORARIOS POR GRUPO
-// ==========================================
-
-// Horario para 10°A
-db.horarios.insertOne({
-  grupo: "10°A",
-  anio_lectivo: "2025",
-  horario: [
-    // LUNES
-    {
-      hora_inicio: "07:00",
-      hora_fin: "08:00",
-      dia: "lunes",
-      id_curso: db.cursos.findOne({codigo_curso: "MAT10A"})._id,
-      curso_info: {
-        nombre_curso: "Matemáticas 10°A",
-        codigo_curso: "MAT10A",
-        docente_nombres: "Juan Pérez",
-        salon: "Aula 201"
-      }
-    },
-    {
-      hora_inicio: "08:00",
-      hora_fin: "09:00",
-      dia: "lunes",
-      id_curso: db.cursos.findOne({codigo_curso: "ESP10A"})._id,
-      curso_info: {
-        nombre_curso: "Español 10°A",
-        codigo_curso: "ESP10A",
-        docente_nombres: "María López",
-        salon: "Aula 202"
-      }
-    },
-    {
-      hora_inicio: "09:00",
-      hora_fin: "10:00",
-      dia: "lunes",
-      id_curso: db.cursos.findOne({codigo_curso: "CIE10A"})._id,
-      curso_info: {
-        nombre_curso: "Ciencias 10°A",
-        codigo_curso: "CIE10A",
-        docente_nombres: "Carlos García",
-        salon: "Laboratorio 1"
-      }
-    },
-    {
-      hora_inicio: "10:00",
-      hora_fin: "10:30",
-      dia: "lunes",
-      curso_info: {
-        nombre_curso: "DESCANSO",
-        codigo_curso: "DESCANSO"
-      }
-    },
-    // MARTES
-    {
-      hora_inicio: "07:00",
-      hora_fin: "08:00",
-      dia: "martes",
-      id_curso: db.cursos.findOne({codigo_curso: "ESP10A"})._id,
-      curso_info: {
-        nombre_curso: "Español 10°A",
-        codigo_curso: "ESP10A",
-        docente_nombres: "María López",
-        salon: "Aula 202"
-      }
-    },
-    {
-      hora_inicio: "08:00",
-      hora_fin: "09:00",
-      dia: "martes",
-      id_curso: db.cursos.findOne({codigo_curso: "MAT10A"})._id,
-      curso_info: {
-        nombre_curso: "Matemáticas 10°A",
-        codigo_curso: "MAT10A",
-        docente_nombres: "Juan Pérez",
-        salon: "Aula 201"
-      }
-    }
-    // Agregar más bloques según necesites...
-  ],
-  creado_en: Timestamp(),
-  actualizado_en: Timestamp()
-});
-
-print("✔ Horario para 10°A creado");
-
-// Horario para 11°A
-db.horarios.insertOne({
-  grupo: "11°A",
-  anio_lectivo: "2025",
-  horario: [
-    {
-      hora_inicio: "07:00",
-      hora_fin: "08:00",
-      dia: "lunes",
-      id_curso: db.cursos.findOne({codigo_curso: "MAT11A"})._id,
-      curso_info: {
-        nombre_curso: "Matemáticas 11°A",
-        codigo_curso: "MAT11A",
-        docente_nombres: "Juan Pérez",
-        salon: "Aula 301"
-      }
-    },
-    {
-      hora_inicio: "08:00",
-      hora_fin: "09:00",
-      dia: "lunes",
-      id_curso: db.cursos.findOne({codigo_curso: "ESP11A"})._id,
-      curso_info: {
-        nombre_curso: "Español 11°A",
-        codigo_curso: "ESP11A",
-        docente_nombres: "María López",
-        salon: "Aula 302"
-      }
-    }
-    // Agregar más bloques...
-  ],
-  creado_en: Timestamp(),
-  actualizado_en: Timestamp()
-});
-
-print("✔ Horario para 11°A creado");
-
-print("\n✅ Grupos y horarios creados exitosamente");
-print("📊 Resumen:");
-print("   - Grupos creados: " + db.grupos.countDocuments());
-print("   - Estudiantes con grupo: " + db.usuarios.countDocuments({ grupo: { $exists: true } }));
-print("   - Cursos con grupo: " + db.cursos.countDocuments({ grupo: { $exists: true } }));
-print("   - Horarios creados: " + db.horarios.countDocuments());
-
-// ==========================================
-//   RESUMEN FINAL
-// ==========================================
-
-print("\n✅ ¡BASE DE DATOS INICIALIZADA COMPLETAMENTE!\n");
-print("📊 Resumen Final:");
-print("   - Usuarios totales: " + db.usuarios.countDocuments());
-print("   - Administradores: " + db.usuarios.countDocuments({ rol: "administrador" }));
-print("   - Docentes: " + db.usuarios.countDocuments({ rol: "docente" }));
-print("   - Estudiantes: " + db.usuarios.countDocuments({ rol: "estudiante" }));
-print("   - Cursos totales: " + db.cursos.countDocuments());
-print("   - Matrículas totales: " + db.matriculas.countDocuments());
-print("   - Registros de auditoría: " + db.auditoria.countDocuments());
-
-print("\n🎓 Distribución por docente:");
-print("   - María López: " + db.cursos.countDocuments({ codigo_curso: { $regex: /^(ESP|LIT)/ } }) + " cursos");
-print("   - Juan Pérez: " + db.cursos.countDocuments({ codigo_curso: { $regex: /^(MAT|ALG)/ } }) + " cursos");
-print("   - Carlos García: " + db.cursos.countDocuments({ codigo_curso: { $regex: /^CIE/ } }) + " cursos");
-print("   - Ana Martínez: " + db.cursos.countDocuments({ codigo_curso: { $regex: /^ING/ } }) + " cursos");
-print("   - Luis Rodríguez: " + db.cursos.countDocuments({ codigo_curso: { $regex: /^EDF/ } }) + " cursos");
-
-print("\n📚 Distribución de matrículas por curso:");
-db.matriculas.aggregate([
-  { $group: { _id: "$curso_info.nombre_curso", total: { $sum: 1 } } },
-  { $sort: { total: -1 } }
-]).forEach(function (doc) {
-  print("   - " + doc._id + ": " + doc.total + " estudiantes");
-});
-
-print("\n✅ Calificaciones distribuidas en 4 periodos para cada matrícula");
-print("   Cada estudiante tiene 12 calificaciones (3 por periodo)");
+print("📊 Resumen de datos creados:");
+print(`   - Usuarios: ${db.usuarios.countDocuments()}`);
+print(`   - Grupos: ${db.grupos.countDocuments()}`);
+print(`   - Cursos: ${db.cursos.countDocuments()}`);
+print(`   - Asignaciones: ${db.asignaciones_docentes.countDocuments()}`);
+print(`   - Matrículas: ${db.matriculas.countDocuments()}`);
+print(`   - Horarios: ${db.horarios.countDocuments()}`);
+print(`   - Observaciones: ${db.observaciones.countDocuments()}`);
+print(`   - Asistencias: ${db.asistencia.countDocuments()}`);

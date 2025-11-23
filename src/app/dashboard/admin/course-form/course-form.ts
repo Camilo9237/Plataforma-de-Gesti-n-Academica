@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../../services/api.service';
+import { AlertService } from '../../../services/alert.service';
 
 @Component({
   selector: 'app-course-form',
@@ -13,59 +14,95 @@ import { ApiService } from '../../../services/api.service';
 })
 export class CourseFormComponent implements OnInit {
   isEdit = false;
-  courseId: string | null = null;
+  assignmentId: string | null = null;
   loading = false;
+  loadingGroups = false;
+  loadingCourses = false;
   loadingTeachers = false;
+  loadingSchedule = false;
   error: string | null = null;
   success: string | null = null;
 
-  // Datos del formulario
+  // ✅ NUEVO MODELO DE DATOS
   formData = {
-    nombre_curso: '',
-    codigo_curso: '',
-    grado: '',
-    periodo: '',
-    descripcion: '',
-    creditos: 1,
-    intensidad_horaria: 2,
-    teacher_id: '',
-    activo: true
+    group_id: '',        // Grupo al que se asigna
+    course_id: '',       // Asignatura (curso base)
+    teacher_id: '',      // Docente
+    periodo: '1',        // Período académico
+    salon: '',           // Salón asignado
+    anio_lectivo: '2025'
   };
 
-  // Lista de docentes disponibles
+  // Listas de datos
+  grupos: any[] = [];
+  cursos: any[] = [];  // Asignaturas base (Matemáticas, Español, etc.)
   teachers: any[] = [];
+  horarioGrupo: any[] = [];
+  bloquesDisponibles: any[] = [];
 
-  // Opciones de grados
-  grados = [
-    '1°', '2°', '3°', '4°', '5°', '6°', '7°', '8°', '9°', '10°', '11°'
-  ];
-
-  // Periodos académicos
-  periodos = ['2024-1', '2024-2', '2025-1', '2025-2', '2026-1', '2026-2'];
+  periodos = ['1', '2', '3', '4'];
+  diasSemana = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
 
   constructor(
     private api: ApiService,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private alertService: AlertService
   ) {}
 
   ngOnInit(): void {
+    this.loadGroups();
+    this.loadCourses();
     this.loadTeachers();
 
-    // Verificar si es edición
-    this.courseId = this.route.snapshot.paramMap.get('id');
+    this.assignmentId = this.route.snapshot.paramMap.get('id');
     
-    if (this.courseId) {
+    if (this.assignmentId) {
       this.isEdit = true;
-      this.loadCourseData();
+      this.loadAssignmentData();
     }
+  }
+
+  loadGroups(): void {
+    this.loadingGroups = true;
+    this.api.getGroups().subscribe({
+      next: (response: any) => {
+        console.log('✅ Grupos cargados:', response);
+        if (response.success) {
+          this.grupos = response.data || [];
+        }
+        this.loadingGroups = false;
+      },
+      error: (err) => {
+        console.error('❌ Error cargando grupos:', err);
+        this.alertService.error('Error al cargar grupos');
+        this.loadingGroups = false;
+      }
+    });
+  }
+
+  loadCourses(): void {
+    this.loadingCourses = true;
+    this.api.getCourses().subscribe({
+      next: (response: any) => {
+        console.log('✅ Cursos cargados:', response);
+        if (response.success) {
+          this.cursos = response.data || [];
+        }
+        this.loadingCourses = false;
+      },
+      error: (err) => {
+        console.error('❌ Error cargando cursos:', err);
+        this.alertService.error('Error al cargar asignaturas');
+        this.loadingCourses = false;
+      }
+    });
   }
 
   loadTeachers(): void {
     this.loadingTeachers = true;
     this.api.getAdminTeachers({ estado: 'activo' }).subscribe({
       next: (response: any) => {
-        console.log('✅ Docentes cargados:', response);
         this.teachers = response.teachers || [];
         this.loadingTeachers = false;
       },
@@ -76,51 +113,59 @@ export class CourseFormComponent implements OnInit {
     });
   }
 
-  loadCourseData(): void {
-    if (!this.courseId) return;
+  onGrupoChange(): void {
+    if (this.formData.group_id) {
+      this.loadGroupSchedule(this.formData.group_id);
+    }
+  }
 
-    this.loading = true;
-    this.api.getCourseDetail(this.courseId).subscribe({
+  loadGroupSchedule(groupId: string): void {
+    this.loadingSchedule = true;
+    this.api.getGroupSchedule(groupId).subscribe({
       next: (response: any) => {
+        console.log('✅ Horario del grupo:', response);
         if (response.success) {
-          const course = response.course;
-          
-          this.formData = {
-            nombre_curso: course.nombre_curso || '',
-            codigo_curso: course.codigo_curso || '',
-            grado: course.grado || '',
-            periodo: course.periodo || '',
-            descripcion: course.descripcion || '',
-            creditos: course.creditos || 1,
-            intensidad_horaria: course.intensidad_horaria || 2,
-            teacher_id: course.id_docente || '',
-            activo: course.activo !== false
-          };
+          this.horarioGrupo = response.bloques || [];
+          this.calcularBloquesDisponibles();
         }
-        this.loading = false;
+        this.loadingSchedule = false;
       },
       error: (err) => {
-        console.error('❌ Error cargando curso:', err);
-        this.error = 'Error al cargar los datos del curso';
-        this.loading = false;
+        console.error('❌ Error cargando horario:', err);
+        this.horarioGrupo = [];
+        this.loadingSchedule = false;
       }
     });
   }
 
+  calcularBloquesDisponibles(): void {
+    const horariosCompletos = new Set<string>();
+    
+    this.horarioGrupo.forEach(bloque => {
+      if (bloque.id_asignacion && bloque.tipo === 'clase') {
+        const key = `${bloque.dia}-${bloque.hora_inicio}`;
+        horariosCompletos.add(key);
+      }
+    });
+    
+    this.bloquesDisponibles = this.horarioGrupo.filter(bloque => {
+      const key = `${bloque.dia}-${bloque.hora_inicio}`;
+      return bloque.tipo === 'libre' || (!horariosCompletos.has(key) && bloque.tipo !== 'descanso');
+    });
+    
+    console.log('📅 Bloques disponibles:', this.bloquesDisponibles);
+  }
+
+  loadAssignmentData(): void {
+    // TODO: Implementar carga de asignación existente para edición
+    console.log('Cargar asignación:', this.assignmentId);
+  }
+
   validateForm(): boolean {
-    if (!this.formData.nombre_curso || !this.formData.codigo_curso || 
-        !this.formData.grado || !this.formData.periodo) {
+    const { group_id, course_id, teacher_id, periodo } = this.formData;
+    
+    if (!group_id || !course_id || !teacher_id || !periodo) {
       this.error = 'Por favor complete todos los campos obligatorios';
-      return false;
-    }
-
-    if (this.formData.creditos < 1 || this.formData.creditos > 10) {
-      this.error = 'Los créditos deben estar entre 1 y 10';
-      return false;
-    }
-
-    if (this.formData.intensidad_horaria < 1 || this.formData.intensidad_horaria > 10) {
-      this.error = 'La intensidad horaria debe estar entre 1 y 10 horas';
       return false;
     }
 
@@ -128,52 +173,30 @@ export class CourseFormComponent implements OnInit {
   }
 
   onSubmit(): void {
-    this.error = null;
-    this.success = null;
-
     if (!this.validateForm()) {
       return;
     }
 
     this.loading = true;
+    this.error = null;
+    this.success = null;
 
-    if (this.isEdit && this.courseId) {
-      // Actualizar curso existente
-      this.api.updateCourse(this.courseId, this.formData).subscribe({
-        next: (response: any) => {
-          console.log('✅ Curso actualizado:', response);
-          this.success = 'Curso actualizado exitosamente';
-          this.loading = false;
-          
-          setTimeout(() => {
-            this.router.navigate(['/dashboard/admin']);
-          }, 1500);
-        },
-        error: (err) => {
-          console.error('❌ Error:', err);
-          this.error = err.error?.error || 'Error al actualizar el curso';
-          this.loading = false;
-        }
-      });
-    } else {
-      // Crear nuevo curso
-      this.api.createCourse(this.formData).subscribe({
-        next: (response: any) => {
-          console.log('✅ Curso creado:', response);
-          this.success = 'Curso creado exitosamente';
-          this.loading = false;
-          
-          setTimeout(() => {
-            this.router.navigate(['/dashboard/admin']);
-          }, 1500);
-        },
-        error: (err) => {
-          console.error('❌ Error:', err);
-          this.error = err.error?.error || 'Error al crear el curso';
-          this.loading = false;
-        }
-      });
-    }
+    this.api.createAssignment(this.formData).subscribe({
+      next: (response: any) => {
+        console.log('✅ Asignación creada:', response);
+        this.alertService.success('Asignación docente creada exitosamente');
+        this.loading = false;
+        
+        setTimeout(() => {
+          this.router.navigate(['/dashboard/admin']);
+        }, 1500);
+      },
+      error: (err) => {
+        console.error('❌ Error:', err);
+        this.alertService.error(err.error?.error || 'Error al crear asignación');
+        this.loading = false;
+      }
+    });
   }
 
   goBack(): void {
@@ -182,17 +205,51 @@ export class CourseFormComponent implements OnInit {
 
   resetForm(): void {
     this.formData = {
-      nombre_curso: '',
-      codigo_curso: '',
-      grado: '',
-      periodo: '',
-      descripcion: '',
-      creditos: 1,
-      intensidad_horaria: 2,
+      group_id: '',
+      course_id: '',
       teacher_id: '',
-      activo: true
+      periodo: '1',
+      salon: '',
+      anio_lectivo: '2025'
     };
+    this.horarioGrupo = [];
+    this.bloquesDisponibles = [];
     this.error = null;
     this.success = null;
+  }
+
+  // ==========================================
+  //   MÉTODOS HELPER PARA EL HORARIO
+  // ==========================================
+
+  getUniqueHours(): string[] {
+    const hours = new Set<string>();
+    this.horarioGrupo.forEach(bloque => {
+      hours.add(`${bloque.hora_inicio}-${bloque.hora_fin}`);
+    });
+    return Array.from(hours).sort();
+  }
+
+  getBlockForTime(dia: string, hora: string): any {
+    const [hora_inicio, hora_fin] = hora.split('-');
+    return this.horarioGrupo.find(b => 
+      b.dia === dia && 
+      b.hora_inicio === hora_inicio && 
+      b.hora_fin === hora_fin
+    );
+  }
+
+  getBlockDisplay(dia: string, hora: string): string {
+    const bloque = this.getBlockForTime(dia, hora);
+    
+    if (!bloque) return '-';
+    
+    if (bloque.tipo === 'descanso') return 'DESCANSO';
+    if (bloque.tipo === 'libre') return '-';
+    if (bloque.tipo === 'clase' && bloque.curso_info) {
+      return bloque.curso_info.nombre_curso || 'Ocupado';
+    }
+    
+    return '-';
   }
 }

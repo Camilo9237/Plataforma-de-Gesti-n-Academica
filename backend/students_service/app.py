@@ -195,81 +195,87 @@ def health():
     return jsonify({'status': 'healthy', 'service': 'students', 'database': 'MongoDB'})
 
 @app.route('/student/grades', methods=['GET', 'OPTIONS'])
+@token_required('estudiante')
 def get_student_grades_dashboard():
     """Endpoint para el dashboard de estudiante - Calificaciones"""
     if request.method == 'OPTIONS':
         return '', 204
     
     try:
-        # Obtener ID del estudiante desde el token o query params
-        estudiante_id = request.args.get('student_id')
+        student_email = g.userinfo.get('email') or g.userinfo.get('preferred_username')
         
-        if not estudiante_id:
-            # Si no hay student_id, usar uno por defecto para desarrollo
-            estudiante_id = '673df46bfaf2a31cb63b0bbd'
+        if not student_email:
+            return jsonify({'success': False, 'error': 'Email no encontrado'}), 400
         
+        usuarios = get_usuarios_collection()
         matriculas = get_matriculas_collection()
         
-        # Buscar matrículas del estudiante
-        obj_id = string_to_objectid(estudiante_id)
-        if not obj_id:
-            return jsonify({'error': 'ID de estudiante inválido'}), 400
+        estudiante = usuarios.find_one({
+            'correo': student_email,
+            'rol': 'estudiante',
+            'activo': True
+        })
         
-        student_matriculas = list(matriculas.find({'id_estudiante': obj_id}))
+        if not estudiante:
+            return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
+        
+        # ✅ CAMBIO: Buscar con 'activa'
+        student_matriculas = list(matriculas.find({
+            'id_estudiante': estudiante['_id'],
+            'estado': 'activa'  # ✅ CAMBIO AQUÍ
+        }))
         
         if not student_matriculas:
-            # Si no hay datos, devolver mock data
             return jsonify({
                 'average': 0.0,
                 'recent': []
             }), 200
         
         # Calcular promedio y obtener calificaciones recientes
-        total_notas = 0
-        count_notas = 0
-        recent_grades = []
+        all_grades = []
         
-        for matricula in student_matriculas[:3]:  # Últimas 3 matrículas
-            curso_info = matricula.get('curso_info', {})
-            calificaciones = matricula.get('calificaciones', [])
+        for matricula in student_matriculas:
+            calificaciones_raw = matricula.get('calificaciones', [])
             
-            for cal in calificaciones:
-                nota = cal.get('nota', 0)
-                total_notas += nota
-                count_notas += 1
+            for cal_asignacion in calificaciones_raw:
+                notas = cal_asignacion.get('notas', [])
+                id_asignacion = cal_asignacion.get('id_asignacion')
                 
-                recent_grades.append({
-                    'subject': curso_info.get('nombre_curso', 'N/A'),
-                    'grade': nota,
-                    'date': cal.get('fecha_eval', datetime.now()).strftime('%Y-%m-%d') if isinstance(cal.get('fecha_eval'), datetime) else str(cal.get('fecha_eval', ''))
-                })
+                # Obtener nombre del curso
+                from database.db_config import get_asignaciones_collection
+                asignaciones = get_asignaciones_collection()
+                asignacion = asignaciones.find_one({'_id': id_asignacion})
+                
+                nombre_curso = "N/A"
+                if asignacion:
+                    nombre_curso = asignacion.get('curso_info', {}).get('nombre_curso', 'N/A')
+                
+                for nota in notas:
+                    all_grades.append({
+                        'subject': nombre_curso,
+                        'grade': nota.get('nota', 0),
+                        'date': nota.get('fecha_eval', '').strftime('%Y-%m-%d') if nota.get('fecha_eval') else ''
+                    })
         
-        average = round(total_notas / count_notas, 2) if count_notas > 0 else 0.0
+        # Ordenar por fecha más reciente
+        all_grades.sort(key=lambda x: x['date'], reverse=True)
         
-        # Ordenar por fecha y tomar las 5 más recientes
-        recent_grades.sort(key=lambda x: x['date'], reverse=True)
-        recent_grades = recent_grades[:5]
+        # Calcular promedio general
+        if all_grades:
+            promedio = round(sum(g['grade'] for g in all_grades) / len(all_grades), 2)
+        else:
+            promedio = 0.0
         
         return jsonify({
-            'average': average,
-            'recent': recent_grades
+            'average': promedio,
+            'recent': all_grades[:5]  # Últimas 5 calificaciones
         }), 200
         
     except Exception as e:
-        print(f"Error en /student/grades: {e}")
+        print(f"❌ Error en get_student_grades: {e}")
         import traceback
         traceback.print_exc()
-        
-        # Devolver mock data en caso de error
-        return jsonify({
-            'average': 4.3,
-            'recent': [
-                {'subject': 'Matemáticas 10° A', 'grade': 4.2, 'date': '2025-02-05'},
-                {'subject': 'Español 10° A', 'grade': 4.5, 'date': '2025-02-05'},
-                {'subject': 'Ciencias 10° A', 'grade': 4.0, 'date': '2025-02-05'}
-            ]
-        }), 200
-
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/student/notifications', methods=['GET', 'OPTIONS'])
 def get_student_notifications_dashboard():
@@ -311,6 +317,7 @@ def get_student_notifications_dashboard():
 
 
 @app.route('/student/schedule', methods=['GET', 'OPTIONS'])
+@token_required('estudiante')
 def get_student_schedule_dashboard():
     """Endpoint para el dashboard de estudiante - Horario"""
     if request.method == 'OPTIONS':
@@ -334,53 +341,87 @@ def get_student_schedule_dashboard():
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
         
-        # ✅ Obtener grupo del estudiante
-        grupo = estudiante.get('grupo')
+        print(f"✅ Estudiante: {estudiante.get('nombres')} {estudiante.get('apellidos')}")
+        
+        # ✅ Obtener id_grupo del estudiante
+        grupo_obj_id = estudiante.get('id_grupo')
+        
+        if not grupo_obj_id:
+            print("❌ Estudiante sin id_grupo")
+            return jsonify({
+                'success': False,
+                'error': 'Estudiante sin grupo asignado'
+            }), 404
+        
+        # ✅ Buscar información del grupo
+        from database.db_config import get_groups_collection
+        grupos = get_groups_collection()
+        
+        grupo = grupos.find_one({'_id': grupo_obj_id})
         
         if not grupo:
-            return jsonify({'success': False, 'error': 'Estudiante sin grupo asignado'}), 404
+            print(f"❌ Grupo con ID {grupo_obj_id} no encontrado")
+            return jsonify({
+                'success': False,
+                'error': 'Grupo no encontrado'
+            }), 404
+        
+        nombre_grupo = grupo.get('nombre_grupo', 'Sin grupo')
+        print(f"📚 Grupo del estudiante: {nombre_grupo}")
         
         # ✅ Buscar horario del grupo
         from database.db_config import get_horarios_collection
         horarios = get_horarios_collection()
         
         horario_grupo = horarios.find_one({
-            'grupo': grupo,
+            'grupo': nombre_grupo,
             'año_lectivo': '2025'
         })
         
         if not horario_grupo:
-            return jsonify({'success': False, 'error': 'Horario no encontrado para el grupo'}), 404
+            print(f"⚠️ No se encontró horario para el grupo {nombre_grupo}")
+            return jsonify({
+                'success': True,
+                'grupo': nombre_grupo,
+                'grado': grupo.get('grado', 'N/A'),
+                'horario': [],
+                'message': 'No hay horario configurado para tu grupo',
+                'año_lectivo': '2025',
+                # Horario de hoy vacío para el dashboard
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'events': []
+            }), 200
         
-        # ✅ Formatear horario
-        horario_formateado = []
-        dias = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes']
-        horas_unicas = sorted(set(
-            f"{bloque['hora_inicio']} - {bloque['hora_fin']}" 
-            for bloque in horario_grupo.get('horario', [])
-        ))
+        print(f"✅ Horario encontrado para {nombre_grupo}")
         
-        for hora in horas_unicas:
-            fila = {'hora': hora}
-            
-            for dia in dias:
-                # Buscar bloque para este día y hora
-                bloque = next((
-                    b for b in horario_grupo.get('horario', [])
-                    if b['dia'] == dia and f"{b['hora_inicio']} - {b['hora_fin']}" == hora
-                ), None)
-                
-                if bloque:
-                    fila[dia] = bloque['curso_info'].get('nombre_curso', 'N/A')
-                else:
-                    fila[dia] = '-'
-            
-            horario_formateado.append(fila)
+        # ✅ Formatear horario para el dashboard (eventos de hoy)
+        day_of_week = datetime.now().strftime('%A').lower()
+        day_map = {
+            'monday': 'lunes',
+            'tuesday': 'martes',
+            'wednesday': 'miércoles',
+            'thursday': 'jueves',
+            'friday': 'viernes'
+        }
+        dia_hoy = day_map.get(day_of_week, 'lunes')
+        
+        eventos_hoy = []
+        for bloque in horario_grupo.get('horario', []):
+            if bloque.get('dia') == dia_hoy:
+                curso_info = bloque.get('curso_info', {})
+                eventos_hoy.append({
+                    'time': f"{bloque.get('hora_inicio')} - {bloque.get('hora_fin')}",
+                    'subject': curso_info.get('nombre_curso', 'N/A'),
+                    'teacher': curso_info.get('docente_nombres', 'N/A'),
+                    'room': curso_info.get('salon', 'N/A')
+                })
         
         return jsonify({
             'success': True,
-            'grupo': grupo,
-            'horario': horario_formateado,
+            'grupo': nombre_grupo,
+            'grado': grupo.get('grado', 'N/A'),
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'events': eventos_hoy,
             'año_lectivo': '2025'
         }), 200
         
@@ -452,57 +493,69 @@ def get_student_courses():
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
         
+        print(f"✅ Estudiante: {estudiante.get('nombres')} {estudiante.get('apellidos')}")
+        
+        # ✅ CAMBIO: Buscar con 'activa' en lugar de 'activo'
         student_matriculas = list(matriculas.find({
             'id_estudiante': estudiante['_id'],
-            'estado': 'activo'
+            'estado': 'activa'  # ✅ CAMBIO AQUÍ
         }))
+        
+        print(f"📚 Matrículas encontradas: {len(student_matriculas)}")
+        
+        if not student_matriculas:
+            return jsonify({
+                'success': True,
+                'courses': [],
+                'count': 0
+            }), 200
         
         cursos = []
         for matricula in student_matriculas:
-            curso_info = matricula.get('curso_info', {})
-            docente_info = matricula.get('docente_info', {})
-            calificaciones = matricula.get('calificaciones', [])
+            grupo_info = matricula.get('grupo_info', {})
+            calificaciones_raw = matricula.get('calificaciones', [])
             
-            # ✅ Agrupar calificaciones por periodo
-            calificaciones_por_periodo = {
-                '1': [],
-                '2': [],
-                '3': [],
-                '4': []
-            }
+            print(f"📊 Procesando matrícula - Grupo: {grupo_info.get('nombre_grupo')}")
+            print(f"   Calificaciones raw: {len(calificaciones_raw)}")
             
-            for cal in calificaciones:
-                periodo_cal = cal.get('periodo', '1')
-                if periodo_cal in calificaciones_por_periodo:
-                    calificaciones_por_periodo[periodo_cal].append(cal)
-            
-            # ✅ Calcular promedio por periodo
-            promedios_por_periodo = {}
-            for periodo, cals in calificaciones_por_periodo.items():
-                if cals:
-                    total = sum(c.get('nota', 0) * c.get('peso', 0) for c in cals)
-                    total_peso = sum(c.get('peso', 0) for c in cals)
-                    promedios_por_periodo[periodo] = round(total / total_peso, 2) if total_peso > 0 else 0
+            # Procesar cada asignación (asignatura)
+            for cal_asignacion in calificaciones_raw:
+                id_asignacion = cal_asignacion.get('id_asignacion')
+                periodo = cal_asignacion.get('periodo', '1')
+                notas = cal_asignacion.get('notas', [])
+                
+                # Obtener info de la asignación
+                from database.db_config import get_asignaciones_collection
+                asignaciones = get_asignaciones_collection()
+                
+                asignacion = asignaciones.find_one({'_id': id_asignacion})
+                
+                if not asignacion:
+                    continue
+                
+                curso_info = asignacion.get('curso_info', {})
+                docente_info = asignacion.get('docente_info', {})
+                
+                # Calcular promedio de las notas
+                if notas:
+                    total = sum(n.get('nota', 0) * n.get('peso', 0) for n in notas)
+                    total_peso = sum(n.get('peso', 0) for n in notas)
+                    promedio = round(total / total_peso, 2) if total_peso > 0 else 0
                 else:
-                    promedios_por_periodo[periodo] = 0
-            
-            # Promedio general (todos los periodos)
-            promedios_validos = [p for p in promedios_por_periodo.values() if p > 0]
-            promedio_general = round(sum(promedios_validos) / len(promedios_validos), 2) if promedios_validos else 0
-            
-            cursos.append({
-                'curso_id': str(matricula.get('id_curso')),
-                'nombre_curso': curso_info.get('nombre_curso', 'N/A'),
-                'codigo_curso': curso_info.get('codigo_curso', 'N/A'),
-                'grado': curso_info.get('grado', 'N/A'),
-                'docente': f"{docente_info.get('nombres', '')} {docente_info.get('apellidos', '')}",
-                'promedio_general': promedio_general,
-                'promedios_por_periodo': promedios_por_periodo,  # ✅ NUEVO
-                'calificaciones_por_periodo': {  # ✅ NUEVO
-                    periodo: serialize_doc(cals) 
-                    for periodo, cals in calificaciones_por_periodo.items()
-                }
-            })
+                    promedio = 0
+                
+                cursos.append({
+                    'curso_id': str(id_asignacion),
+                    'nombre_curso': curso_info.get('nombre_curso', 'N/A'),
+                    'codigo_curso': curso_info.get('codigo_curso', 'N/A'),
+                    'grado': curso_info.get('grado', 'N/A'),
+                    'periodo': periodo,
+                    'docente': f"{docente_info.get('nombres', '')} {docente_info.get('apellidos', '')}",
+                    'promedio': promedio,
+                    'calificaciones': serialize_doc(notas)
+                })
+        
+        print(f"✅ Total cursos procesados: {len(cursos)}")
         
         return jsonify({
             'success': True,
@@ -515,7 +568,7 @@ def get_student_courses():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-        
+            
 @app.route('/student/certificado/<tipo>', methods=['GET'])
 @token_required('estudiante')
 def download_certificado(tipo):
@@ -626,13 +679,22 @@ def download_boletin():
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
         
+        print(f"✅ Generando boletín para: {estudiante.get('nombres')} {estudiante.get('apellidos')}")
+        print(f"📅 Periodo: {periodo}")
+        
         matriculas = get_matriculas_collection()
         
-        # ✅ Obtener TODAS las matrículas del estudiante (sin filtrar por periodo en la matrícula)
-        student_matriculas = list(matriculas.find({
+        # ✅ Obtener matrícula del estudiante
+        matricula = matriculas.find_one({
             'id_estudiante': estudiante['_id'],
-            'estado': 'activo'
-        }))
+            'estado': 'activa',
+            'anio_lectivo': '2025'
+        })
+        
+        if not matricula:
+            return jsonify({'success': False, 'error': 'No se encontró matrícula activa'}), 404
+        
+        print(f"✅ Matrícula encontrada")
         
         # Crear PDF en memoria
         buffer = BytesIO()
@@ -653,62 +715,135 @@ def download_boletin():
         p.drawString(inch, y_position, f"Código: {estudiante.get('codigo_est')}")
         y_position -= 0.4 * inch
         
+        grupo_info = matricula.get('grupo_info', {})
+        p.drawString(inch, y_position, f"Grupo: {grupo_info.get('nombre_grupo', 'N/A')} - Grado {grupo_info.get('grado', 'N/A')}°")
+        y_position -= 0.4 * inch
+        
         p.drawString(inch, y_position, f"Periodo Académico: {periodo}")
+        y_position -= 0.4 * inch
+        
+        p.drawString(inch, y_position, f"Año Lectivo: 2025")
         y_position -= 0.8 * inch
         
-        # Tabla de calificaciones
+        # Tabla de calificaciones - Encabezados
         p.setFont("Helvetica-Bold", 11)
         p.drawString(inch, y_position, "Materia")
-        p.drawString(3 * inch, y_position, "Promedio")
-        p.drawString(4 * inch, y_position, "Estado")
+        p.drawString(3.5 * inch, y_position, "Promedio")
+        p.drawString(4.5 * inch, y_position, "Estado")
+        y_position -= 0.05 * inch
+        
+        # Línea separadora
+        p.line(inch, y_position, 6 * inch, y_position)
         y_position -= 0.3 * inch
         
         p.setFont("Helvetica", 10)
-        total_promedio = 0
-        count = 0
         
-        # ✅ FILTRAR CALIFICACIONES POR PERIODO
-        for matricula in student_matriculas:
-            curso_info = matricula.get('curso_info', {})
-            calificaciones = matricula.get('calificaciones', [])
+        # ✅ CAMBIO: Procesar calificaciones por asignación
+        calificaciones_raw = matricula.get('calificaciones', [])
+        
+        print(f"📊 Total de asignaciones con calificaciones: {len(calificaciones_raw)}")
+        
+        total_promedio = 0
+        count_materias = 0
+        
+        from database.db_config import get_asignaciones_collection
+        asignaciones = get_asignaciones_collection()
+        
+        for cal_asignacion in calificaciones_raw:
+            # ✅ FILTRAR POR PERIODO A NIVEL DE ASIGNACIÓN
+            periodo_asignacion = cal_asignacion.get('periodo', '1')
             
-            # ✅ Filtrar solo calificaciones del periodo seleccionado
-            calificaciones_periodo = [
-                cal for cal in calificaciones 
-                if cal.get('periodo') == periodo
-            ]
+            if periodo_asignacion != periodo:
+                continue  # Saltar si no es el periodo seleccionado
             
-            # Solo mostrar cursos con calificaciones en este periodo
-            if calificaciones_periodo:
-                # Calcular promedio ponderado del periodo
-                total = sum(cal.get('nota', 0) * cal.get('peso', 0) for cal in calificaciones_periodo)
-                total_peso = sum(cal.get('peso', 0) for cal in calificaciones_periodo)
-                promedio = round(total / total_peso, 2) if total_peso > 0 else 0
-                
-                estado = 'Aprobado' if promedio >= 3.0 else 'Reprobado'
-                
-                p.drawString(inch, y_position, curso_info.get('nombre_curso', 'N/A'))
-                p.drawString(3 * inch, y_position, f"{promedio:.2f}")
-                p.drawString(4 * inch, y_position, estado)
-                y_position -= 0.3 * inch
-                
-                total_promedio += promedio
-                count += 1
+            id_asignacion = cal_asignacion.get('id_asignacion')
+            notas = cal_asignacion.get('notas', [])
+            
+            if not notas:
+                continue  # Saltar si no hay notas
+            
+            # Obtener información de la asignación (curso)
+            asignacion = asignaciones.find_one({'_id': id_asignacion})
+            
+            if not asignacion:
+                continue
+            
+            curso_info = asignacion.get('curso_info', {})
+            nombre_curso = curso_info.get('nombre_curso', 'N/A')
+            
+            # Calcular promedio ponderado de las notas
+            total = sum(n.get('nota', 0) * n.get('peso', 0) for n in notas)
+            total_peso = sum(n.get('peso', 0) for n in notas)
+            promedio = round(total / total_peso, 2) if total_peso > 0 else 0
+            
+            estado = 'Aprobado' if promedio >= 3.0 else 'Reprobado'
+            
+            # Verificar si hay espacio suficiente en la página
+            if y_position < 2 * inch:
+                p.showPage()
+                p.setFont("Helvetica", 10)
+                y_position = height - inch
+            
+            # Dibujar fila
+            p.drawString(inch, y_position, nombre_curso)
+            p.drawString(3.5 * inch, y_position, f"{promedio:.2f}")
+            
+            # Color del estado
+            if promedio >= 3.0:
+                p.setFillColorRGB(0, 0.5, 0)  # Verde
+            else:
+                p.setFillColorRGB(0.8, 0, 0)  # Rojo
+            
+            p.drawString(4.5 * inch, y_position, estado)
+            p.setFillColorRGB(0, 0, 0)  # Volver a negro
+            
+            y_position -= 0.3 * inch
+            
+            total_promedio += promedio
+            count_materias += 1
         
         # Promedio general del periodo
-        if count > 0:
-            promedio_general = total_promedio / count
-            y_position -= 0.5 * inch
-            p.setFont("Helvetica-Bold", 12)
-            p.drawString(inch, y_position, f"Promedio General del Periodo {periodo}: {promedio_general:.2f}")
-        else:
-            y_position -= 0.5 * inch
-            p.setFont("Helvetica", 11)
-            p.drawString(inch, y_position, "No hay calificaciones registradas para este periodo")
+        y_position -= 0.5 * inch
         
-        # Fecha
+        if count_materias > 0:
+            promedio_general = total_promedio / count_materias
+            
+            # Línea separadora
+            p.line(inch, y_position, 6 * inch, y_position)
+            y_position -= 0.4 * inch
+            
+            p.setFont("Helvetica-Bold", 12)
+            p.drawString(inch, y_position, f"Promedio General del Periodo {periodo}:")
+            p.drawString(3.5 * inch, y_position, f"{promedio_general:.2f}")
+            
+            # Estado general
+            estado_general = 'APROBADO' if promedio_general >= 3.0 else 'REPROBADO'
+            if promedio_general >= 3.0:
+                p.setFillColorRGB(0, 0.5, 0)
+            else:
+                p.setFillColorRGB(0.8, 0, 0)
+            
+            p.drawString(4.5 * inch, y_position, estado_general)
+            p.setFillColorRGB(0, 0, 0)
+            
+            print(f"✅ Promedio general: {promedio_general:.2f}")
+            print(f"✅ Materias procesadas: {count_materias}")
+        else:
+            p.setFont("Helvetica", 11)
+            p.drawString(inch, y_position, f"No hay calificaciones registradas para el periodo {periodo}")
+            print(f"⚠️ No se encontraron calificaciones para el periodo {periodo}")
+        
+        # Fecha de expedición
         p.setFont("Helvetica", 10)
         p.drawString(inch, inch, f"Fecha de expedición: {datetime.now().strftime('%d/%m/%Y')}")
+        
+        # Firmas
+        y_firma = 1.5 * inch
+        p.line(inch, y_firma, 2.5 * inch, y_firma)
+        p.drawString(inch, y_firma - 0.3 * inch, "Director de Grupo")
+        
+        p.line(3.5 * inch, y_firma, 5 * inch, y_firma)
+        p.drawString(3.5 * inch, y_firma - 0.3 * inch, "Coordinador Académico")
         
         # Finalizar PDF
         p.showPage()
@@ -728,7 +863,7 @@ def download_boletin():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
+    
 @app.route('/students', methods=['GET'])
 def get_students():
     """Obtener todos los estudiantes"""

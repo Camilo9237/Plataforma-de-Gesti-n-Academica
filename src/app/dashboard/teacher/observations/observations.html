@@ -41,13 +41,8 @@
 
   <!-- Filtros -->
   <div class="filters card">
-    <input 
-      type="text" 
-      placeholder="Buscar por estudiante o descripción..." 
-      [(ngModel)]="filtros.texto"
-      (ngModelChange)="aplicarFiltroTexto()"
-      class="search-input"
-    />
+    <input type="text" placeholder="Buscar por estudiante o descripción..." [(ngModel)]="filtros.texto"
+      (ngModelChange)="aplicarFiltroTexto()" class="search-input" />
     <select [(ngModel)]="filtros.tipo" (ngModelChange)="aplicarFiltros()">
       <option value="todas">Todas</option>
       <option value="positiva">Positivas</option>
@@ -108,10 +103,7 @@
           </td>
           <td class="grupo">{{ getGrupoNombre(o) }}</td>
           <td>
-            <span 
-              class="chip" 
-              [class.positiva]="o.tipo === 'positiva'"
-              [class.negativa]="o.tipo === 'negativa'"
+            <span class="chip" [class.positiva]="o.tipo === 'positiva'" [class.negativa]="o.tipo === 'negativa'"
               [class.neutral]="o.tipo === 'neutral'">
               {{ o.tipo }}
             </span>
@@ -149,10 +141,18 @@
 
         <div class="form-group">
           <label>Grupo *</label>
-          <select [(ngModel)]="nuevaObs.course_id" [disabled]="editandoId !== null">
+          <select [(ngModel)]="nuevaObs.course_id" (ngModelChange)="onGrupoChangeModal()"
+            [disabled]="editandoId !== null">
             <option value="">Seleccionar grupo</option>
             <option *ngFor="let g of grupos" [value]="g._id">{{ g.name }}</option>
           </select>
+          <!-- ✅ AGREGAR MENSAJE SI NO HAY ESTUDIANTES -->
+          <small *ngIf="estudiantes.length === 0 && nuevaObs.course_id" class="text-muted">
+            No hay estudiantes en este grupo
+          </small>
+          <small *ngIf="!nuevaObs.course_id" class="text-muted">
+            Primero selecciona un grupo
+          </small>
         </div>
 
         <div class="form-row">
@@ -188,20 +188,14 @@
 
         <div class="form-group">
           <label>Descripción *</label>
-          <textarea 
-            [(ngModel)]="nuevaObs.descripcion" 
-            rows="4"
-            placeholder="Describe la observación detalladamente..."
-          ></textarea>
+          <textarea [(ngModel)]="nuevaObs.descripcion" rows="4"
+            placeholder="Describe la observación detalladamente..."></textarea>
         </div>
 
         <div class="form-group">
           <label>Seguimiento / Acciones Tomadas</label>
-          <textarea 
-            [(ngModel)]="nuevaObs.seguimiento" 
-            rows="3"
-            placeholder="Indica las acciones de seguimiento realizadas..."
-          ></textarea>
+          <textarea [(ngModel)]="nuevaObs.seguimiento" rows="3"
+            placeholder="Indica las acciones de seguimiento realizadas..."></textarea>
         </div>
 
         <div class="form-group checkbox">

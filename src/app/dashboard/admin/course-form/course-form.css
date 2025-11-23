@@ -288,3 +288,208 @@
     justify-content: center;
   }
 }
+/* ==========================================
+   SECCIÓN DE HORARIO DEL GRUPO
+========================================== */
+.schedule-info-box {
+  background: #e3f2fd;
+  border-left: 4px solid #2196f3;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.schedule-info-box .info-text {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: #1565c0;
+}
+
+.schedule-info-box .material-icons {
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.text-occupied {
+  color: #d32f2f;
+}
+
+.text-available {
+  color: #388e3c;
+}
+
+.schedule-grid {
+  overflow-x: auto;
+  margin: 20px 0;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.schedule-table thead {
+  background: linear-gradient(135deg, #0b6b3a 0%, #2b8b5a 100%);
+  color: white;
+}
+
+.schedule-table th {
+  padding: 12px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.schedule-table td {
+  padding: 10px;
+  text-align: center;
+  border: 1px solid #e0e0e0;
+  font-size: 13px;
+}
+
+.hour-cell {
+  background: #f5f5f5;
+  font-weight: 600;
+  color: #0b6b3a;
+  white-space: nowrap;
+}
+
+.occupied {
+  background: #ffebee !important;
+  color: #c62828;
+  font-weight: 500;
+}
+
+.available {
+  background: #e8f5e9 !important;
+  color: #2e7d32;
+}
+
+.break {
+  background: #fff3e0 !important;
+  color: #e65100;
+  font-style: italic;
+}
+
+.cell-content {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Bloques disponibles */
+.available-blocks {
+  background: #f1f8f4;
+  border: 2px solid #4caf50;
+  border-radius: 10px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.available-blocks h3 {
+  margin: 0 0 15px;
+  color: #2e7d32;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.available-blocks .material-icons {
+  font-size: 22px;
+}
+
+.blocks-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.block-badge {
+  background: #4caf50;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.more-blocks {
+  background: #757575;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Warning box */
+.warning-box {
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.warning-box .material-icons {
+  color: #f57c00;
+  font-size: 24px;
+}
+
+.warning-box p {
+  margin: 0;
+  color: #856404;
+  font-size: 14px;
+}
+
+/* Info box */
+.info-box {
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.info-box .material-icons {
+  color: #1976d2;
+  font-size: 28px;
+}
+
+.info-box p {
+  margin: 0;
+  color: #1565c0;
+  font-size: 15px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .schedule-grid {
+    overflow-x: scroll;
+  }
+
+  .schedule-table {
+    min-width: 600px;
+  }
+
+  .blocks-list {
+    justify-content: center;
+  }
+}

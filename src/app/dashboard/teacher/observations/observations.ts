@@ -166,19 +166,62 @@ export default class ObservationsComponent implements OnInit {
   }
 
   nuevaObservacion() {
-    this.editandoId = null;
-    this.nuevaObs = {
-      student_id: '',
-      course_id: '',
-      tipo: 'positiva',
-      categoria: 'academica',
-      descripcion: '',
-      seguimiento: '',
-      gravedad: 'leve',
-      notificado_acudiente: false
-    };
-    this.showModal = true;
+  this.editandoId = null;
+  
+  // ✅ Si hay grupos disponibles, preseleccionar el primero
+  const grupoInicial = this.grupos.length > 0 ? this.grupos[0]._id : '';
+  
+  this.nuevaObs = {
+    student_id: '',
+    course_id: grupoInicial,  // ✅ Preseleccionar primer grupo
+    tipo: 'positiva',
+    categoria: 'academica',
+    descripcion: '',
+    seguimiento: '',
+    gravedad: 'leve',
+    notificado_acudiente: false
+  };
+  
+  this.showModal = true;
+  
+  // ✅ Cargar estudiantes del grupo preseleccionado
+  if (grupoInicial) {
+    this.cargarEstudiantesDelGrupo(grupoInicial);
   }
+}
+cargarEstudiantesDelGrupo(grupoId: string) {
+  if (!grupoId) {
+    this.estudiantes = [];
+    return;
+  }
+
+  console.log('📚 Cargando estudiantes del grupo:', grupoId);
+
+  this.api.getCourseGrades(grupoId).subscribe({
+    next: (res: any) => {
+      if (res.success && res.students) {
+        this.estudiantes = res.students;
+        console.log(`✅ ${this.estudiantes.length} estudiantes cargados`);
+      } else {
+        this.estudiantes = [];
+        console.warn('⚠️ No se encontraron estudiantes en el grupo');
+      }
+    },
+    error: (err: any) => {
+      console.error('❌ Error cargando estudiantes:', err);
+      this.estudiantes = [];
+      this.error = 'Error al cargar estudiantes del grupo';
+    }
+  });
+}
+
+onGrupoChangeModal() {
+  // ✅ Llamar cuando cambia el grupo en el modal de nueva observación
+  this.cargarEstudiantesDelGrupo(this.nuevaObs.course_id);
+  
+  // Limpiar estudiante seleccionado
+  this.nuevaObs.student_id = '';
+}
 
   editar(obs: Observacion) {
     this.editandoId = obs._id;

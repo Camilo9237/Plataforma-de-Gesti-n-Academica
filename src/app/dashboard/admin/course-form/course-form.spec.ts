@@ -288,7 +288,7 @@ describe('CourseFormComponent', () => {
         nombre_curso: 'Math',
         codigo_curso: 'MATH101',
         grado: '10°',
-        periodo: '2024-1',
+        periodo: '1',
         descripcion: 'Test',
         creditos: 3,
         intensidad_horaria: 4,
@@ -465,8 +465,8 @@ describe('CourseFormComponent', () => {
     });
 
     it('should have periodos array', () => {
-      expect(component.periodos.length).toBeGreaterThan(0);
-      expect(component.periodos).toContain('2024-1');
-    });
+  expect(component.periodos.length).toBe(4); // ✅ CAMBIO: 4 períodos
+  expect(component.periodos).toEqual(['1', '2', '3', '4']); // ✅ CAMBIO: valores numéricos
+});
   });
 });

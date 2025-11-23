@@ -3,6 +3,8 @@ from flask_cors import CORS
 from datetime import datetime
 from bson.timestamp import Timestamp
 from keycloak import KeycloakOpenID
+from functools import wraps
+import jwt as pyjwt
 import sys
 import os
 
@@ -62,12 +64,144 @@ if KeycloakOpenID is not None:
     except Exception:
         keycloak_openid = None
 
+def tiene_rol(token_info, cliente_id, rol_requerido):
+    """Comprueba si los claims del token contienen el rol requerido.
+
+    Busca tanto en realm_access como en resource_access[cliente_id].
+    """
+    try:
+        # 1. Buscar en realm_access (roles globales del realm)
+        realm_roles = token_info.get('realm_access', {}).get('roles', [])
+        if rol_requerido in realm_roles:
+            print(f"✓ Rol '{rol_requerido}' encontrado en realm_access")
+            return True
+        
+        # 2. Buscar en resource_access para el cliente específico
+        if cliente_id and cliente_id in token_info.get('resource_access', {}):
+            client_roles = token_info.get('resource_access', {}).get(cliente_id, {}).get('roles', [])
+            if rol_requerido in client_roles:
+                print(f"✓ Rol '{rol_requerido}' encontrado en resource_access[{cliente_id}]")
+                return True
+        
+        # 3. Buscar en TODOS los clientes (fallback)
+        resource_access = token_info.get('resource_access', {})
+        for client_id, client_data in resource_access.items():
+            client_roles = client_data.get('roles', [])
+            if rol_requerido in client_roles:
+                print(f"✓ Rol '{rol_requerido}' encontrado en resource_access[{client_id}]")
+                return True
+        
+        print(f"✗ Rol '{rol_requerido}' NO encontrado. Realm roles: {realm_roles}, Resource access: {list(resource_access.keys())}")
+        return False
+        
+    except Exception as e:
+        print(f"Error al verificar rol: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def token_required(roles_permitidos=None):
+    """Decorador que valida la presencia del token y del rol requerido.
+    
+    Args:
+        roles_permitidos: str, list o None. Rol(es) permitido(s) para acceder al endpoint.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            # Modo desarrollo: permitir token mock
+            if keycloak_openid is None:
+                auth = request.headers.get('Authorization', '')
+                if auth.startswith('Bearer mock-access-token') or auth.startswith('Bearer mock-token-for-admin'):
+                    g.userinfo = {'sub': 'admin', 'roles': ['administrador']}
+                    return f(*args, **kwargs)
+                return jsonify({'error': 'Keycloak no configurado'}), 500
+
+            auth_header = request.headers.get('Authorization', None)
+            if not auth_header:
+                print("✗ No se encontró header Authorization")
+                return jsonify({'error': 'Token Requerido'}), 401
+                
+            try:
+                token = auth_header.split(' ')[1]
+                print(f"🔑 Token recibido: {token[:50]}...")
+                
+                # Intentar decodificar con Keycloak (modo producción)
+                try:
+                    public_key_pem = f"-----BEGIN PUBLIC KEY-----\n{keycloak_openid.public_key()}\n-----END PUBLIC KEY-----"
+                    
+                    userinfo = keycloak_openid.decode_token(
+                        token,
+                        key=public_key_pem,
+                        options={
+                            "verify_signature": True,
+                            "verify_aud": False,
+                            "verify_exp": True
+                        }
+                    )
+                    print(f"✅ Token decodificado con Keycloak")
+                    print(f"   Usuario: {userinfo.get('preferred_username', 'N/A')}")
+                    print(f"   Email: {userinfo.get('email', 'N/A')}")
+                    
+                except Exception as decode_error:
+                    print(f"⚠️ Error decodificando con Keycloak: {decode_error}")
+                    # Fallback: decodificar sin verificar firma
+                    userinfo = pyjwt.decode(token, options={"verify_signature": False})
+                    print("⚠️ Token decodificado SIN verificar firma (modo desarrollo)")
+                
+            except pyjwt.ExpiredSignatureError:
+                print("✗ Token expirado")
+                return jsonify({'error': 'Token expirado'}), 401
+            except pyjwt.InvalidTokenError as e:
+                print(f"✗ Token inválido: {e}")
+                return jsonify({'error': 'Token inválido'}), 401
+            except Exception as e:
+                print(f"✗ Error al decodificar token: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'error': 'Token inválido o expirado'}), 401
+            
+            # ✅ VALIDAR ROL SI SE ESPECIFICÓ
+            if roles_permitidos is not None:
+                # Convertir a lista si es string
+                if isinstance(roles_permitidos, str):
+                    roles_list = [roles_permitidos]
+                elif isinstance(roles_permitidos, list):
+                    roles_list = roles_permitidos
+                else:
+                    print(f"⚠️ roles_permitidos tiene tipo inválido: {type(roles_permitidos)}")
+                    roles_list = []
+                
+                print(f"🔍 Verificando roles permitidos: {roles_list}")
+                
+                # Verificar si el usuario tiene al menos uno de los roles permitidos
+                tiene_acceso = False
+                for rol in roles_list:
+                    if tiene_rol(userinfo, KEYCLOAK_CLIENT_ID, rol):
+                        print(f"✅ Usuario tiene el rol '{rol}'")
+                        tiene_acceso = True
+                        break
+                
+                if not tiene_acceso:
+                    print(f"✗ Acceso denegado: se requiere uno de estos roles: {roles_list}")
+                    return jsonify({
+                        'error': f"Acceso denegado: se requiere uno de los siguientes roles: {', '.join(roles_list)}"
+                    }), 403
+
+            g.userinfo = userinfo
+            return f(*args, **kwargs)
+        
+        return decorated
+    return decorator
+
 
 # ==========================================
 #   ENDPOINTS DE GRUPOS
 # ==========================================
 
 @app.route('/groups', methods=['GET'])
+@token_required(['administrador', 'docente'])
 def get_all_groups():
     """Obtener todos los grupos"""
     try:
@@ -170,46 +304,274 @@ def create_group():
     except Exception as e:
         print(f"❌ Error en create_group: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/groups/<group_id>/students', methods=['GET'])
-def get_group_students(group_id):
-    """Obtener estudiantes de un grupo"""
+@app.route('/groups/<group_id>', methods=['GET', 'OPTIONS'])
+@token_required(['administrador', 'docente'])
+def get_group_detail(group_id):
+    """Obtener detalles de un grupo específico"""
+    if request.method == 'OPTIONS':
+        return '', 204
+    
     try:
         grupos = get_groups_collection()
-        usuarios = get_usuarios_collection()
         
-        # Verificar que el grupo existe
-        obj_id = string_to_objectid(group_id)
-        if not obj_id:
+        # Convertir ID a ObjectId
+        group_obj_id = string_to_objectid(group_id)
+        if not group_obj_id:
             return jsonify({'success': False, 'error': 'ID inválido'}), 400
         
-        grupo = grupos.find_one({'_id': obj_id})
+        # Buscar grupo
+        grupo = grupos.find_one({'_id': group_obj_id})
+        
         if not grupo:
             return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
         
-        # Buscar estudiantes del grupo
-        estudiantes = list(usuarios.find({
-            'rol': 'estudiante',
-            'grupo': grupo['nombre_grupo'],
-            'activo': True
-        }))
+        # Obtener información del docente director si existe
+        if grupo.get('director_grupo'):
+            usuarios = get_usuarios_collection()
+            docente = usuarios.find_one({'_id': grupo['director_grupo']})
+            if docente:
+                grupo['director_info'] = {
+                    'nombres': docente.get('nombres'),
+                    'apellidos': docente.get('apellidos'),
+                    'especialidad': docente.get('especialidad')
+                }
+        
+        # Contar estudiantes matriculados activos
+        from database.db_config import get_matriculas_collection
+        matriculas = get_matriculas_collection()
+        
+        num_estudiantes = matriculas.count_documents({
+            'id_grupo': group_obj_id,
+            'estado': 'activa'
+        })
+        
+        grupo['estudiantes_actuales'] = num_estudiantes
         
         return jsonify({
             'success': True,
-            'grupo': grupo['nombre_grupo'],
+            'group': serialize_doc(grupo)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_group_detail: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ==========================================
+#   ENDPOINT: HORARIOS DE GRUPOS
+# ==========================================
+
+@app.route('/groups/<group_id>/schedule', methods=['GET'])
+@token_required(['administrador', 'docente'])
+def get_group_schedule(group_id):
+    """Obtener horario de un grupo específico"""
+    try:
+        from database.db_config import get_horarios_collection
+        
+        horarios = get_horarios_collection()
+        grupos = get_groups_collection()
+        
+        # Verificar que el grupo existe
+        group_obj_id = string_to_objectid(group_id)
+        if not group_obj_id:
+            return jsonify({'success': False, 'error': 'ID de grupo inválido'}), 400
+        
+        grupo = grupos.find_one({'_id': group_obj_id})
+        if not grupo:
+            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
+        
+        # Buscar horario del grupo
+        horario = horarios.find_one({
+            'id_grupo': group_obj_id,
+            'activo': True
+        })
+        
+        if not horario:
+            # Crear horario vacío si no existe
+            return jsonify({
+                'success': True,
+                'bloques': [],
+                'message': 'Grupo sin horario asignado'
+            }), 200
+        
+        # Serializar y devolver
+        bloques = horario.get('bloques', [])
+        
+        return jsonify({
+            'success': True,
+            'bloques': serialize_doc(bloques),
+            'grupo_info': {
+                'nombre_grupo': grupo['nombre_grupo'],
+                'grado': grupo['grado'],
+                'jornada': grupo.get('jornada', 'mañana')
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en get_group_schedule: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/groups/<group_id>/schedule', methods=['POST'])
+@token_required('administrador')
+def update_group_schedule(group_id):
+    """Actualizar horario de un grupo"""
+    try:
+        from database.db_config import get_horarios_collection, get_asignaciones_collection
+        
+        data = request.get_json()
+        
+        if not data or 'bloques' not in data:
+            return jsonify({'success': False, 'error': 'Bloques requeridos'}), 400
+        
+        horarios = get_horarios_collection()
+        grupos = get_groups_collection()
+        
+        group_obj_id = string_to_objectid(group_id)
+        if not group_obj_id:
+            return jsonify({'success': False, 'error': 'ID de grupo inválido'}), 400
+        
+        grupo = grupos.find_one({'_id': group_obj_id})
+        if not grupo:
+            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
+        
+        # Procesar bloques
+        bloques = data['bloques']
+        bloques_procesados = []
+        
+        for bloque in bloques:
+            bloque_procesado = {
+                'dia': bloque['dia'],
+                'hora_inicio': bloque['hora_inicio'],
+                'hora_fin': bloque['hora_fin'],
+                'tipo': bloque.get('tipo', 'libre'),  # clase, descanso, libre
+                'orden': bloque.get('orden', 0)
+            }
+            
+            # Si es una clase, agregar info de asignación
+            if bloque.get('id_asignacion'):
+                assignment_obj_id = string_to_objectid(bloque['id_asignacion'])
+                if assignment_obj_id:
+                    asignaciones = get_asignaciones_collection()
+                    asignacion = asignaciones.find_one({'_id': assignment_obj_id})
+                    
+                    if asignacion:
+                        bloque_procesado['id_asignacion'] = assignment_obj_id
+                        bloque_procesado['tipo'] = 'clase'
+                        bloque_procesado['curso_info'] = asignacion.get('curso_info', {})
+                        bloque_procesado['docente_info'] = asignacion.get('docente_info', {})
+                        bloque_procesado['salon'] = asignacion.get('salon_asignado', '')
+            
+            bloques_procesados.append(bloque_procesado)
+        
+        # Actualizar o crear horario
+        horario_existente = horarios.find_one({'id_grupo': group_obj_id})
+        
+        if horario_existente:
+            # Actualizar
+            resultado = horarios.update_one(
+                {'_id': horario_existente['_id']},
+                {
+                    '$set': {
+                        'bloques': bloques_procesados,
+                        'actualizado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
+                    }
+                }
+            )
+            message = 'Horario actualizado exitosamente'
+        else:
+            # Crear nuevo
+            nuevo_horario = {
+                'id_grupo': group_obj_id,
+                'grupo_info': {
+                    'nombre_grupo': grupo['nombre_grupo'],
+                    'grado': grupo['grado']
+                },
+                'año_lectivo': data.get('anio_lectivo', '2025'),
+                'bloques': bloques_procesados,
+                'activo': True,
+                'creado_en': Timestamp(int(datetime.utcnow().timestamp()), 0),
+                'actualizado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
+            }
+            resultado = horarios.insert_one(nuevo_horario)
+            message = 'Horario creado exitosamente'
+        
+        # Auditoría
+        registrar_auditoria(
+            id_usuario=g.userinfo.get('sub'),
+            accion='actualizar_horario_grupo',
+            entidad_afectada='horarios',
+            id_entidad=group_id,
+            detalles=f"Horario actualizado para grupo {grupo['nombre_grupo']}"
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': message
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error en update_group_schedule: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/groups/<group_id>/students', methods=['GET', 'OPTIONS'])
+@token_required(['administrador', 'docente'])
+def get_group_students(group_id):
+    """Obtener estudiantes de un grupo"""
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        from database.db_config import get_usuarios_collection
+        
+        grupos = get_groups_collection()
+        usuarios = get_usuarios_collection()
+        
+        # Verificar grupo
+        group_obj_id = string_to_objectid(group_id)
+        if not group_obj_id:
+            return jsonify({'success': False, 'error': 'ID inválido'}), 400
+        
+        grupo = grupos.find_one({'_id': group_obj_id})
+        if not grupo:
+            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
+        
+        # ✅ CAMBIO: Buscar por id_grupo (ObjectId) en lugar de grupo (string)
+        estudiantes = list(usuarios.find({
+            'id_grupo': group_obj_id,  # ✅ Usar ObjectId
+            'rol': 'estudiante',
+            'activo': True
+        }))
+        
+        print(f"✅ Query ejecutada: id_grupo={group_obj_id}")
+        print(f"✅ Encontrados {len(estudiantes)} estudiantes en grupo {grupo['nombre_grupo']}")
+        
+        # Mostrar ejemplo si hay estudiantes
+        if estudiantes:
+            ejemplo = estudiantes[0]
+            print(f"📋 Ejemplo: {ejemplo.get('nombres')} - id_grupo: {ejemplo.get('id_grupo')}")
+        
+        return jsonify({
+            'success': True,
             'estudiantes': serialize_doc(estudiantes),
             'count': len(estudiantes)
         }), 200
         
     except Exception as e:
         print(f"❌ Error en get_group_students: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
+    
 @app.route('/groups/<group_id>/assign-student', methods=['POST'])
+@token_required('administrador')
 def assign_student_to_group(group_id):
-    """Asignar un estudiante a un grupo y matricularlo automáticamente en los cursos del grupo"""
+    """Asignar un estudiante a un grupo y matricularlo automáticamente"""
     try:
         data = request.get_json()
         
@@ -218,7 +580,6 @@ def assign_student_to_group(group_id):
         
         grupos = get_groups_collection()
         usuarios = get_usuarios_collection()
-        cursos = get_cursos_collection()
         matriculas = get_matriculas_collection()
         
         # Verificar grupo
@@ -242,9 +603,18 @@ def assign_student_to_group(group_id):
         if not estudiante:
             return jsonify({'success': False, 'error': 'Estudiante no encontrado'}), 404
         
+        # Verificar si ya tiene grupo asignado
+        if estudiante.get('id_grupo'):
+            grupo_actual = grupos.find_one({'_id': estudiante['id_grupo']})
+            if grupo_actual:
+                return jsonify({
+                    'success': False,
+                    'error': f"Estudiante ya asignado al grupo {grupo_actual['nombre_grupo']}"
+                }), 400
+        
         # Verificar capacidad del grupo
         estudiantes_actuales = usuarios.count_documents({
-            'grupo': grupo['nombre_grupo'],
+            'id_grupo': grupo_obj_id,  # ✅ Usar ObjectId
             'activo': True
         })
         
@@ -254,63 +624,54 @@ def assign_student_to_group(group_id):
                 'error': 'El grupo ha alcanzado su capacidad máxima'
             }), 400
         
-        # ✅ Asignar grupo al estudiante
+        # ✅ Asignar grupo al estudiante (usando ObjectId)
         usuarios.update_one(
             {'_id': student_obj_id},
-            {'$set': {'grupo': grupo['nombre_grupo']}}
+            {'$set': {'id_grupo': grupo_obj_id}}  # ✅ Usar ObjectId
         )
         
-        # ✅ Buscar todos los cursos del grupo
-        cursos_grupo = list(cursos.find({
-            'grupo': grupo['nombre_grupo'],
-            'activo': True
-        }))
+        # ✅ Crear matrícula del estudiante en el grupo
+        nueva_matricula = {
+            'id_estudiante': student_obj_id,
+            'id_grupo': grupo_obj_id,
+            'anio_lectivo': '2025',
+            'fecha_matricula': Timestamp(int(datetime.utcnow().timestamp()), 0),
+            'estado': 'activa',
+            'estudiante_info': {
+                'nombres': estudiante.get('nombres'),
+                'apellidos': estudiante.get('apellidos'),
+                'codigo_est': estudiante.get('codigo_est'),
+                'documento': estudiante.get('documento')
+            },
+            'grupo_info': {
+                'nombre_grupo': grupo['nombre_grupo'],
+                'grado': grupo['grado'],
+                'jornada': grupo.get('jornada', 'mañana')
+            },
+            'observaciones': 'Asignación manual desde panel administrativo',
+            'creado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
+        }
         
-        # ✅ Matricular automáticamente en todos los cursos del grupo
-        matriculas_creadas = 0
-        for curso in cursos_grupo:
-            # Verificar si ya está matriculado
-            matricula_existente = matriculas.find_one({
-                'id_estudiante': student_obj_id,
-                'id_curso': curso['_id']
-            })
-            
-            if not matricula_existente:
-                # Crear matrícula
-                nueva_matricula = {
-                    'id_estudiante': student_obj_id,
-                    'id_curso': curso['_id'],
-                    'fecha_matricula': Timestamp(int(datetime.utcnow().timestamp()), 0),
-                    'estado': 'activo',
-                    'calificaciones': [],
-                    'estudiante_info': {
-                        'nombres': estudiante.get('nombres'),
-                        'apellidos': estudiante.get('apellidos'),
-                        'codigo_est': estudiante.get('codigo_est')
-                    },
-                    'curso_info': {
-                        'nombre_curso': curso.get('nombre_curso'),
-                        'codigo_curso': curso.get('codigo_curso'),
-                        'grado': curso.get('grado'),
-                        'periodo': curso.get('periodo')
-                    }
-                }
-                
-                matriculas.insert_one(nueva_matricula)
-                matriculas_creadas += 1
+        matriculas.insert_one(nueva_matricula)
+        
+        # Actualizar contador de estudiantes en el grupo
+        grupos.update_one(
+            {'_id': grupo_obj_id},
+            {'$inc': {'estudiantes_actuales': 1}}
+        )
         
         registrar_auditoria(
-            id_usuario=None,
+            id_usuario=g.userinfo.get('sub'),
             accion='asignar_estudiante_grupo',
             entidad_afectada='usuarios',
             id_entidad=data['student_id'],
-            detalles=f"Estudiante asignado a {grupo['nombre_grupo']} y matriculado en {matriculas_creadas} cursos"
+            detalles=f"Estudiante asignado al grupo {grupo['nombre_grupo']}"
         )
         
         return jsonify({
             'success': True,
-            'message': f'Estudiante asignado al grupo {grupo["nombre_grupo"]}',
-            'matriculas_creadas': matriculas_creadas
+            'message': f'Estudiante asignado al grupo {grupo["nombre_grupo"]} exitosamente',
+            'matriculas_creadas': 1
         }), 200
         
     except Exception as e:
@@ -318,126 +679,13 @@ def assign_student_to_group(group_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
+    
 # ==========================================
 #   ENDPOINTS DE HORARIOS
 # ==========================================
 
-@app.route('/groups/<group_id>/schedule', methods=['GET'])
-def get_group_schedule(group_id):
-    """Obtener horario de un grupo"""
-    try:
-        grupos = get_groups_collection()
-        horarios = get_horarios_collection()
-        
-        # Verificar grupo
-        obj_id = string_to_objectid(group_id)
-        if not obj_id:
-            return jsonify({'success': False, 'error': 'ID inválido'}), 400
-        
-        grupo = grupos.find_one({'_id': obj_id})
-        if not grupo:
-            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
-        
-        # Buscar horario
-        horario = horarios.find_one({
-            'grupo': grupo['nombre_grupo'],
-            'año_lectivo': grupo.get('año_lectivo', '2025')
-        })
-        
-        if not horario:
-            return jsonify({
-                'success': True,
-                'grupo': grupo['nombre_grupo'],
-                'horario': [],
-                'message': 'No hay horario configurado para este grupo'
-            }), 200
-        
-        return jsonify({
-            'success': True,
-            'data': serialize_doc(horario)
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ Error en get_group_schedule: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/groups/<group_id>/schedule', methods=['POST'])
-def create_group_schedule(group_id):
-    """Crear o actualizar horario de un grupo"""
-    try:
-        data = request.get_json()
-        
-        if 'horario' not in data or not isinstance(data['horario'], list):
-            return jsonify({
-                'success': False,
-                'error': 'Se requiere un arreglo de bloques de horario'
-            }), 400
-        
-        grupos = get_groups_collection()
-        horarios = get_horarios_collection()
-        
-        # Verificar grupo
-        obj_id = string_to_objectid(group_id)
-        if not obj_id:
-            return jsonify({'success': False, 'error': 'ID inválido'}), 400
-        
-        grupo = grupos.find_one({'_id': obj_id})
-        if not grupo:
-            return jsonify({'success': False, 'error': 'Grupo no encontrado'}), 404
-        
-        # Verificar si ya existe horario
-        horario_existente = horarios.find_one({
-            'grupo': grupo['nombre_grupo'],
-            'año_lectivo': grupo.get('año_lectivo', '2025')
-        })
-        
-        if horario_existente:
-            # Actualizar
-            horarios.update_one(
-                {'_id': horario_existente['_id']},
-                {
-                    '$set': {
-                        'horario': data['horario'],
-                        'actualizado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
-                    }
-                }
-            )
-            
-            return jsonify({
-                'success': True,
-                'message': 'Horario actualizado exitosamente'
-            }), 200
-        else:
-            # Crear nuevo
-            nuevo_horario = {
-                'grupo': grupo['nombre_grupo'],
-                'año_lectivo': grupo.get('año_lectivo', '2025'),
-                'horario': data['horario'],
-                'creado_en': Timestamp(int(datetime.utcnow().timestamp()), 0),
-                'actualizado_en': Timestamp(int(datetime.utcnow().timestamp()), 0)
-            }
-            
-            resultado = horarios.insert_one(nuevo_horario)
-            
-            registrar_auditoria(
-                id_usuario=None,
-                accion='crear_horario_grupo',
-                entidad_afectada='horarios',
-                id_entidad=str(resultado.inserted_id),
-                detalles=f"Horario creado para {grupo['nombre_grupo']}"
-            )
-            
-            return jsonify({
-                'success': True,
-                'message': 'Horario creado exitosamente'
-            }), 201
-        
-    except Exception as e:
-        print(f"❌ Error en create_group_schedule: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/health')

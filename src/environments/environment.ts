@@ -7,6 +7,7 @@ export const environment = {
     admin: 'http://localhost:5003',
     administrator: 'http://localhost:5003',
     groups: 'http://localhost:5004',
-    grades: 'http://localhost:5005'
+    grades: 'http://localhost:5005',
+    courses: 'http://localhost:5006'
   }
 };

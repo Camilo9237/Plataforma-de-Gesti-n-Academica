@@ -107,6 +107,10 @@ def get_horarios_collection():
     """Obtener coleccion de horarios"""
     return DatabaseConfig.get_collection('horarios')
 
+def get_asignaciones_collection():
+    """Obtener coleccion de asignaciones docentes"""
+    return DatabaseConfig.get_collection('asignaciones_docentes')
+
 # Funciones de utilidad para conversión de datos
 def serialize_doc(doc):
     """Convierte un documento MongoDB a formato JSON serializable"""
