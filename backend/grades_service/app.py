@@ -25,7 +25,11 @@ app.secret_key = "PlataformaColegios"
 # 🔧 CORS CONFIGURACIÓN
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:4200"],
+        "origins": [
+            "http://localhost:4200",
+            "http://localhost:4300",
+            "https://plataformadegestionacademica.vercel.app"
+        ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "expose_headers": ["Content-Type", "Authorization"],
@@ -33,18 +37,6 @@ CORS(app, resources={
     }
 })
 
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = app.make_default_options_response()
-        headers = {
-            'Access-Control-Allow-Origin': 'http://localhost:4200',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Access-Control-Max-Age': '3600'
-        }
-        response.headers.update(headers)
-        return response
 
 # Replace the hardcoded block in grades_service/app.py with:
 KEYCLOAK_SERVER = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8082')

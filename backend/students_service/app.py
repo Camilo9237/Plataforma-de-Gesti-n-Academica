@@ -42,18 +42,6 @@ CORS(app, resources={
         "supports_credentials": True
     }
 })
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = app.make_default_options_response()
-        headers = {
-            'Access-Control-Allow-Origin': request.headers.get('Origin', 'http://localhost:4200'),
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Access-Control-Max-Age': '3600'
-        }
-        response.headers.update(headers)
-        return response
 
 # Keycloak config
 KEYCLOAK_SERVER = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8082')
