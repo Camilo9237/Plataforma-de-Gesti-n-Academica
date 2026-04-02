@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm run build:lambda",
-  "outputDirectory": "dist/arquitectura_proyecto",
+  "outputDirectory": "dist/arquitectura_proyecto/browser",
   "installCommand": "npm ci",
   "rewrites": [
     {
